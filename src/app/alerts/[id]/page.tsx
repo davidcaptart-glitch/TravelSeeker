@@ -194,8 +194,10 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
       {s?.groundOnly && c.groundFrom && (
         <section className="card">
           <h2 className="mb-1 font-semibold">🚆 Alternativa sin avión desde {c.groundFrom.label}</h2>
-          <p className="hint mb-3">Horario real de un día equivalente; el precio es una estimación.</p>
-          <GroundOptions options={[s.groundOnly]} />
+          <p className="hint mb-3">
+            Horarios reales (de un día equivalente si la fecha es lejana). FlixBus con precio real del día; el resto, estimado.
+          </p>
+          <GroundOptions options={s.groundOnlyOptions ?? [s.groundOnly]} />
         </section>
       )}
 

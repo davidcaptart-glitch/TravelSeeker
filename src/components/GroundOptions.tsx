@@ -20,8 +20,14 @@ export function GroundOptions({ options }: { options: GroundOption[] }) {
                 {o.kind === "transit" ? ` · ${o.legs.filter((l) => l.mode !== "WALK").length - 1} transbordos` : ""}
               </p>
             </div>
-            <span className="shrink-0 text-sm font-semibold" title="Estimación aproximada">
-              ~{eur(o.cost)}
+            <span className="shrink-0 text-right text-sm font-semibold">
+              <span title={o.estimated ? "Estimación aproximada" : "Precio real para la fecha del viaje"}>
+                {o.estimated ? "~" : ""}
+                {eur(o.cost)}
+              </span>
+              {o.legs.some((l) => l.realPrice) && (
+                <span className="badge ml-1.5 bg-good-soft text-good">{o.estimated ? "en parte real" : "precio real"}</span>
+              )}
             </span>
           </div>
           {o.legs.length > 1 && (
@@ -35,8 +41,9 @@ export function GroundOptions({ options }: { options: GroundOption[] }) {
                       {l.line ? ` ${l.line}` : ""} {l.agency ? `(${l.agency})` : ""}: {l.from} → {l.to}
                     </span>
                     <span className="shrink-0 text-muted">
+                      {l.departTime ? `${l.departTime} · ` : ""}
                       {minutes(l.minutes)}
-                      {l.cost ? ` · ${eur(l.cost)}` : ""}
+                      {l.cost ? ` · ${l.realPrice ? "" : "~"}${eur(l.cost)}` : ""}
                     </span>
                   </li>
                 ))}
@@ -53,7 +60,7 @@ export function GroundOptions({ options }: { options: GroundOption[] }) {
               ?.filter((b) => b.label !== "Google Maps")
               .map((b) => (
                 <a key={b.label} className="text-accent underline" href={b.url} target="_blank" rel="noreferrer">
-                  Precio real en {b.label}
+                  {b.label === "FlixBus" && o.legs.some((l) => l.realPrice) ? "Reservar en FlixBus" : `Precio real en ${b.label}`}
                 </a>
               ))}
           </div>

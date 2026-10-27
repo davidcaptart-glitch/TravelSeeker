@@ -217,7 +217,8 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
       country: c.destination.place.country,
       includeTaxi: false,
     }).catch(() => []);
-    summary.groundOnly = opts.sort((a, b) => a.minutes - b.minutes)[0];
+    summary.groundOnlyOptions = opts.sort((a, b) => a.minutes - b.minutes).slice(0, 3);
+    summary.groundOnly = summary.groundOnlyOptions[0];
   }
 
   await pruneMatches(alert.id, Math.max(24, c.checkEveryHours * 4));

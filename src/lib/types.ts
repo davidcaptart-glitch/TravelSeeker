@@ -127,6 +127,9 @@ export type TransitLeg = {
   minutes: number;
   km: number;
   cost: number;
+  // Precio consultado al operador para esa fecha (si no, es una estimación).
+  realPrice?: boolean;
+  departTime?: string;
 };
 
 export type GroundOption = {
@@ -135,7 +138,8 @@ export type GroundOption = {
   minutes: number;
   cost: number;
   legs: TransitLeg[];
-  estimated: true;
+  // true si algún tramo con coste usa precio estimado.
+  estimated: boolean;
   mapsLink?: string;
   bookingLinks?: { label: string; url: string }[];
 };
@@ -175,5 +179,7 @@ export type RunSummary = {
   fullMatches: number;
   notified: number;
   groundOnly?: GroundOption;
+  // Todas las alternativas por tierra (la más rápida es groundOnly).
+  groundOnlyOptions?: GroundOption[];
   notes: string[];
 };

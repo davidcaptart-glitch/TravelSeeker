@@ -31,7 +31,8 @@ Sin claves de API ya usa datos reales para los vuelos de **Ryanair**, el **aloja
 | Alojamiento (Booking, Agoda, Trip.com…) | Xotelo (precios de TripAdvisor) + código de ciudad de Wikidata | no, sin cupo |
 | Código de ciudad de TripAdvisor cuando Wikidata no lo tiene (opcional) | TripAdvisor Content API | `TRIPADVISOR_KEY` (plan gratuito con cupo mensual; una consulta por destino nuevo) |
 | Alojamiento donde Xotelo no llega | SerpApi · Google Hotels | la misma `SERPAPI_KEY` (comparte cupo) |
-| Tren, bus, metro… | Transitous (MOTIS) | no |
+| Tren, bus, metro… (horarios) | Transitous (MOTIS) | no |
+| Autocar FlixBus (precio real del día) | API pública de la web de FlixBus (no oficial) | no, sin cupo |
 | Taxi | OSRM (distancia real) × tarifa aproximada del país | no |
 | Lugares y estaciones | Photon (OpenStreetMap) | no |
 | Festivos | Nager.Date | no |
@@ -66,7 +67,7 @@ Para usar APIs privadas o de pago (Duffel, Hotelbeds, Booking, Trainline, Omio�
 
 ## Limitaciones conocidas
 
-- Los precios de tren, bus y taxi son **estimaciones**. La app enlaza a Trainline, Omio, FlixBus y Google Maps para ver el precio real.
+- Los precios de FlixBus son reales para la fecha del viaje (se marcan como «precio real»). Los de tren, bus urbano y taxi siguen siendo **estimaciones** (con «~»); la app enlaza a Trainline, Omio y Google Maps para comprobarlos.
 - Para fechas lejanas, los horarios de transporte público se consultan en un día equivalente de las próximas semanas.
 - Ryanair y Xotelo son APIs públicas pero no oficiales: si cambian, el embudo sigue con las demás fuentes. Xotelo no da estrellas, así que el filtro de estrellas solo se aplica cuando la fuente las tiene.
 - El código de ciudad de TripAdvisor se busca en Wikidata y, con `TRIPADVISOR_KEY`, en la API oficial de TripAdvisor. Si aun así no aparece, la alerta lo indica y basta con pegar el enlace de la ciudad en TripAdvisor en el apartado Alojamiento.

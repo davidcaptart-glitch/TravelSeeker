@@ -3,9 +3,11 @@ import { addDays, diffDays, toISO } from "../dates";
 import { haversineKm, nearestStation } from "../geo";
 import { legCost, MODE_LABELS, taxiCost } from "../fares";
 import type { GroundOption, LastMile, TransitLeg } from "../types";
+import { flixCityNear, flixTrips, pickTrip, type FlixCity } from "./flixbus";
 
 // Rutas por tierra con APIs gratuitas:
 //  - Transitous (MOTIS): tren, bus, metro... con horarios reales de toda Europa.
+//  - FlixBus: precios reales de autocar para la fecha del viaje.
 //  - OSRM: distancia y tiempo en coche para el taxi.
 const UA = { "User-Agent": "TravelSeeker/0.1 (alertas de viaje)" };
 
@@ -116,11 +118,98 @@ function toOption(it: MotisItinerary, from: Pt, to: Pt, country?: string, airpor
     kind: "transit",
     label: transitLegs.map((l) => `${MODE_LABELS[l.mode] ?? l.mode}${l.line ? ` ${l.line}` : ""}`).join(" → ") || "A pie",
     minutes: Math.round(it.duration / 60),
-    cost: Math.round(legs.reduce((s, l) => s + l.cost, 0) * 100) / 100,
+    cost: sumCost(legs),
     legs,
-    estimated: true,
+    estimated: isEstimated(legs),
     mapsLink: mapsLink(from, to, "transit"),
     bookingLinks: bookingLinks(legs, from, to),
+  };
+}
+
+const sumCost = (legs: TransitLeg[]) => Math.round(legs.reduce((s, l) => s + l.cost, 0) * 100) / 100;
+const isEstimated = (legs: TransitLeg[]) => legs.some((l) => l.cost > 0 && !l.realPrice);
+const isFlix = (agency?: string) => Boolean(agency && /flix/i.test(agency));
+
+/**
+ * Los tramos de FlixBus que propone Transitous llevan horario de un día equivalente:
+ * se sustituye su precio estimado por el real de la fecha del viaje.
+ */
+async function priceFlixLegs(it: MotisItinerary, opt: GroundOption, date: string): Promise<GroundOption> {
+  let changed = false;
+  for (let i = 0; i < it.legs.length; i++) {
+    const m = it.legs[i];
+    const leg = opt.legs[i];
+    if (!leg || !isFlix(m.agencyName)) continue;
+    const [a, b] = await Promise.all([
+      flixCityNear({ label: m.from.name, lat: m.from.lat, lon: m.from.lon }, 25),
+      flixCityNear({ label: m.to.name, lat: m.to.lat, lon: m.to.lon }, 25),
+    ]);
+    if (!a || !b || a.id === b.id) continue;
+    const trip = pickTrip(await flixTrips(a, b, date).catch(() => []), "07:00");
+    if (!trip) continue;
+    leg.cost = trip.price;
+    leg.realPrice = true;
+    changed = true;
+    opt.bookingLinks = [{ label: "FlixBus", url: trip.link }, ...(opt.bookingLinks ?? []).filter((l) => l.label !== "FlixBus")];
+  }
+  if (changed) {
+    opt.cost = sumCost(opt.legs);
+    opt.estimated = isEstimated(opt.legs);
+  }
+  return opt;
+}
+
+/** Tramo desde/hasta la estación de FlixBus: la opción más barata (transporte público, combinada o taxi). */
+async function connector(a: Pt, b: Pt, date: string, hourUtc: number, country?: string, airportIata?: string) {
+  if (haversineKm(a.lat, a.lon, b.lat, b.lon) < 2) return null;
+  const opts = await groundOptions(a, b, { date, hourUtc, country, airportIata, noFlix: true });
+  return opts.sort((x, y) => x.cost - y.cost)[0] ?? null;
+}
+
+/**
+ * Opción en autocar de FlixBus con precio real: ciudad FlixBus más cercana al origen y al destino,
+ * más los tramos de acercamiento (Transitous o taxi, estimados).
+ */
+async function flixOption(
+  from: Pt,
+  to: Pt,
+  opts: { date: string; hourUtc: number; notBefore?: string; country?: string; airportIata?: string },
+): Promise<GroundOption | null> {
+  const [a, b] = await Promise.all([flixCityNear(from), flixCityNear(to)]);
+  if (!a || !b || a.id === b.id) return null;
+  const trip = pickTrip(await flixTrips(a, b, opts.date).catch(() => []), opts.notBefore ?? "07:00");
+  if (!trip) return null;
+
+  const cityPt = (c: FlixCity, station: string): Pt => ({ label: station, lat: c.lat, lon: c.lon });
+  const depHour = Number(trip.departure.slice(11, 13));
+  const arrHour = Number(trip.arrival.slice(11, 13));
+  const [before, after] = await Promise.all([
+    connector(from, cityPt(a, trip.fromStation), opts.date, Math.max(5, depHour - 2), opts.country, opts.airportIata),
+    connector(cityPt(b, trip.toStation), to, opts.date, Math.min(22, arrHour), opts.country),
+  ]);
+  const bus: TransitLeg = {
+    mode: "COACH",
+    from: trip.fromStation,
+    to: trip.toStation,
+    line: trip.transfers ? `${trip.transfers} transbordo(s)` : undefined,
+    agency: "FlixBus",
+    minutes: trip.minutes,
+    km: Math.round(haversineKm(a.lat, a.lon, b.lat, b.lon)),
+    cost: trip.price,
+    realPrice: true,
+    departTime: trip.departure.slice(11, 16),
+  };
+  const legs = [...(before?.legs ?? []), bus, ...(after?.legs ?? [])];
+  const parts = [before?.label, `FlixBus ${trip.departure.slice(11, 16)}`, after?.label].filter(Boolean);
+  return {
+    kind: before || after ? "mixed" : "transit",
+    label: parts.join(" → "),
+    minutes: (before?.minutes ?? 0) + trip.minutes + (after?.minutes ?? 0) + (before ? 20 : 0) + (after ? 10 : 0),
+    cost: sumCost(legs),
+    legs,
+    estimated: isEstimated(legs),
+    mapsLink: mapsLink(from, to, "transit"),
+    bookingLinks: [{ label: "FlixBus", url: trip.link }],
   };
 }
 
@@ -133,7 +222,7 @@ async function taxiOption(from: Pt, to: Pt, country?: string, airportIata?: stri
     minutes: d.minutes,
     cost,
     legs: [{ mode: "TAXI", from: from.label, to: to.label, minutes: d.minutes, km: d.km, cost }],
-    estimated: true,
+    estimated: cost > 0,
     mapsLink: mapsLink(from, to, "driving"),
   };
 }
@@ -145,13 +234,29 @@ async function taxiOption(from: Pt, to: Pt, country?: string, airportIata?: stri
 export async function groundOptions(
   from: Pt,
   to: Pt,
-  opts: { date: string; hourUtc?: number; country?: string; airportIata?: string; includeTaxi?: boolean },
+  opts: {
+    date: string;
+    hourUtc?: number;
+    // Hora local mínima de salida para el autocar (p. ej. llegada del vuelo + 1 h).
+    notBefore?: string;
+    country?: string;
+    airportIata?: string;
+    includeTaxi?: boolean;
+    noFlix?: boolean;
+  },
 ): Promise<GroundOption[]> {
   const hour = opts.hourUtc ?? 9;
   const out: GroundOption[] = [];
   const direct = await transitous(from, to, opts.date, hour);
   const best = direct.sort((a, b) => a.duration - b.duration).slice(0, 2);
-  for (const it of best) out.push(toOption(it, from, to, opts.country, opts.airportIata));
+  for (const it of best) out.push(await priceFlixLegs(it, toOption(it, from, to, opts.country, opts.airportIata), opts.date));
+
+  // Autocar FlixBus con precio real para trayectos largos (si no lo ha propuesto ya Transitous).
+  const km = haversineKm(from.lat, from.lon, to.lat, to.lon);
+  if (km > 50 && !opts.noFlix && !out.some((o) => o.legs.some((l) => isFlix(l.agency) && l.realPrice))) {
+    const flix = await flixOption(from, to, { ...opts, hourUtc: hour }).catch(() => null);
+    if (flix) out.push(flix);
+  }
 
   if (!best.length) {
     // Rutas combinadas con taxi en los extremos sin transporte público (aeropuertos o pueblos sin estación).
@@ -177,7 +282,7 @@ export async function groundOptions(
         minutes: parts.reduce((s, x) => s + x.minutes, 0) + 10 * (parts.length - 1),
         cost: Math.round(parts.reduce((s, x) => s + x.cost, 0) * 100) / 100,
         legs: parts.flatMap((x) => x.legs),
-        estimated: true,
+        estimated: parts.some((x) => x.estimated),
         mapsLink: mapsLink(from, to, "transit"),
         bookingLinks: mid.bookingLinks,
       });
@@ -199,9 +304,12 @@ export async function lastMile(
 ): Promise<LastMile> {
   const from = { label: `Aeropuerto ${airport.iata}`, lat: airport.lat, lon: airport.lon };
   const hour = arriveTime ? Math.min(22, Math.max(6, Number(arriveTime.slice(0, 2)))) : 10;
+  // El autocar tiene que salir al menos una hora después de aterrizar.
+  const notBefore = arriveTime ? `${String(Math.min(23, Number(arriveTime.slice(0, 2)) + 1)).padStart(2, "0")}:${arriveTime.slice(3, 5)}` : undefined;
   const options = await groundOptions(from, target, {
     date,
     hourUtc: hour,
+    notBefore,
     country: airport.country,
     airportIata: airport.iata,
   });
