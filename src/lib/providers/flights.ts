@@ -1,0 +1,197 @@
+import { cached, peekCache } from "../db";
+import { getAirport, haversineKm } from "../geo";
+import { take } from "../quota";
+import type { FlightOffer } from "../types";
+import { hash, timeBucket } from "./mock";
+
+/**
+ * Embudo de vuelos:
+ *  - screen(): cribado barato con precios en caché (Travelpayouts/Aviasales Data API, gratis para afiliados).
+ *  - confirm(): búsqueda en vivo de unas fechas concretas (SerpApi Google Flights, 250 búsquedas/mes gratis).
+ * Sin claves, ambos usan datos simulados.
+ */
+
+const TP_TOKEN = process.env.TRAVELPAYOUTS_TOKEN;
+const SERPAPI_KEY = process.env.SERPAPI_KEY;
+
+export const flightProviders = {
+  screen: TP_TOKEN ? "travelpayouts" : SERPAPI_KEY ? "none" : "mock",
+  confirm: SERPAPI_KEY ? "serpapi" : TP_TOKEN ? "cached" : "mock",
+} as const;
+
+type TPItem = {
+  origin: string;
+  destination: string;
+  origin_airport: string;
+  destination_airport: string;
+  price: number;
+  airline: string;
+  departure_at: string;
+  return_at?: string;
+  transfers: number;
+  return_transfers?: number;
+  duration?: number;
+  link: string;
+};
+
+async function screenTravelpayouts(origin: string, destination: string | null, month: string): Promise<FlightOffer[]> {
+  const params = new URLSearchParams({
+    origin,
+    departure_at: month,
+    return_at: month,
+    one_way: "false",
+    direct: "false",
+    sorting: "price",
+    unique: destination ? "false" : "true",
+    currency: "eur",
+    limit: "1000",
+    token: TP_TOKEN!,
+  });
+  if (destination) params.set("destination", destination);
+  return cached(`tp:${origin}:${destination ?? "*"}:${month}`, 3 * 3600, async () => {
+    const res = await fetch(`https://api.travelpayouts.com/aviasales/v3/prices_for_dates?${params}`);
+    if (!res.ok) throw new Error(`Travelpayouts ${res.status}`);
+    const json = (await res.json()) as { success: boolean; data: TPItem[] };
+    return json.data
+      .filter((d) => d.return_at)
+      .map((d) => ({
+        provider: "travelpayouts",
+        cached: true,
+        origin: d.origin_airport || d.origin,
+        destination: d.destination_airport || d.destination,
+        depart: d.departure_at.slice(0, 10),
+        ret: d.return_at!.slice(0, 10),
+        price: d.price,
+        stops: Math.max(d.transfers, d.return_transfers ?? 0),
+        durationMinutes: d.duration,
+        airline: d.airline,
+        departTime: d.departure_at.slice(11, 16),
+        link: `https://www.aviasales.com${d.link}`,
+      }));
+  });
+}
+
+function mockPrice(origin: string, destination: string, depart: string, ret: string): number {
+  const a = getAirport(origin);
+  const b = getAirport(destination);
+  const km = a && b ? haversineKm(a.lat, a.lon, b.lat, b.lon) : 1200;
+  const base = 35 + km * 0.09;
+  const factor = 0.55 + hash(`${origin}${destination}${depart}${ret}${timeBucket()}`) * 1.1;
+  return Math.round(base * factor);
+}
+
+function mockOffer(origin: string, destination: string, depart: string, ret: string, cachedData: boolean): FlightOffer {
+  const a = getAirport(origin);
+  const b = getAirport(destination);
+  const km = a && b ? haversineKm(a.lat, a.lon, b.lat, b.lon) : 1200;
+  const h = hash(`${origin}${destination}${depart}`);
+  const stops = km < 1500 ? (h < 0.7 ? 0 : 1) : h < 0.4 ? 0 : h < 0.85 ? 1 : 2;
+  const hour = 6 + Math.floor(h * 15);
+  const durationMinutes = Math.round(km / 12 + 40 + stops * 95);
+  return {
+    provider: "simulado",
+    cached: cachedData,
+    origin,
+    destination,
+    depart,
+    ret,
+    price: mockPrice(origin, destination, depart, ret),
+    stops,
+    durationMinutes,
+    airline: ["Vueling", "Ryanair", "Iberia", "Air France", "easyJet", "TAP", "LOT"][Math.floor(h * 7)],
+    departTime: `${String(hour).padStart(2, "0")}:${h > 0.5 ? "35" : "05"}`,
+    link: `https://www.google.com/travel/flights?q=${encodeURIComponent(`Flights from ${origin} to ${destination} on ${depart} through ${ret}`)}`,
+  };
+}
+
+export async function screen(
+  origin: string,
+  destination: string | null,
+  month: string,
+  windows: { depart: string; ret: string }[],
+  anywhereCandidates: string[] = [],
+): Promise<FlightOffer[]> {
+  if (flightProviders.screen === "travelpayouts") return screenTravelpayouts(origin, destination, month);
+  const dests = destination ? [destination] : anywhereCandidates;
+  const inMonth = windows.filter((w) => w.depart.startsWith(month));
+  if (flightProviders.screen === "none") {
+    // Sin cribado: todas las fechas pasan a confirmación (precio desconocido = 0 para ordenar por fecha).
+    return dests.flatMap((d) => inMonth.map((w) => ({ ...mockOffer(origin, d, w.depart, w.ret, true), provider: "sin-cribado", price: 0 })));
+  }
+  return dests.flatMap((d) => inMonth.map((w) => mockOffer(origin, d, w.depart, w.ret, true)));
+}
+
+type SerpFlight = {
+  flights: { departure_airport: { id: string; time: string }; arrival_airport: { id: string; time: string }; airline: string }[];
+  layovers?: unknown[];
+  total_duration?: number;
+  price?: number;
+};
+
+export type ConfirmResult = { offer: FlightOffer | null; quotaExhausted?: boolean };
+
+export async function confirm(
+  candidate: FlightOffer,
+  opts: { maxStops: number; passengers: number },
+): Promise<ConfirmResult> {
+  const { origin, destination, depart, ret } = candidate;
+  if (flightProviders.confirm === "cached") return { offer: candidate };
+  if (flightProviders.confirm === "mock") {
+    // La búsqueda "en vivo" simulada puede variar un poco respecto al precio en caché.
+    const live = mockOffer(origin, destination, depart, ret, false);
+    live.price = Math.round(candidate.price * (0.92 + hash(`${depart}${ret}live${timeBucket()}`) * 0.2));
+    return { offer: live };
+  }
+
+  const key = `serp:f:${origin}:${destination}:${depart}:${ret}:${opts.maxStops}:${opts.passengers}`;
+  const existing = await peekCache<FlightOffer | null>(key);
+  if (existing !== undefined) return { offer: existing };
+  if (!(await take("serpapi"))) return { offer: null, quotaExhausted: true };
+
+  return {
+    offer: await cached(key, 4 * 3600, async () => {
+      const params = new URLSearchParams({
+        engine: "google_flights",
+        departure_id: origin,
+        arrival_id: destination,
+        outbound_date: depart,
+        return_date: ret,
+        type: "1",
+        currency: "EUR",
+        hl: "es",
+        gl: "es",
+        adults: String(opts.passengers),
+        stops: String(opts.maxStops + 1), // 1 = directo, 2 = 1 escala o menos, 3 = 2 o menos
+        api_key: SERPAPI_KEY!,
+      });
+      const res = await fetch(`https://serpapi.com/search.json?${params}`);
+      if (!res.ok) throw new Error(`SerpApi ${res.status}`);
+      const json = (await res.json()) as {
+        best_flights?: SerpFlight[];
+        other_flights?: SerpFlight[];
+        search_metadata?: { google_flights_url?: string };
+      };
+      const all = [...(json.best_flights ?? []), ...(json.other_flights ?? [])].filter((f) => f.price);
+      all.sort((a, b) => a.price! - b.price!);
+      const best = all[0];
+      if (!best) return null;
+      const first = best.flights[0];
+      const last = best.flights[best.flights.length - 1];
+      return {
+        provider: "google-flights",
+        cached: false,
+        origin,
+        destination,
+        depart,
+        ret,
+        price: Math.round(best.price! / opts.passengers), // siempre por persona
+        stops: best.flights.length - 1,
+        durationMinutes: best.total_duration,
+        airline: [...new Set(best.flights.map((f) => f.airline))].join(" + "),
+        departTime: first.departure_airport.time.slice(11, 16),
+        arriveTime: last.arrival_airport.time.slice(11, 16),
+        link: json.search_metadata?.google_flights_url,
+      } satisfies FlightOffer;
+    }),
+  };
+}

@@ -1,0 +1,86 @@
+﻿@import "tailwindcss";
+
+:root {
+--background: #f6f4ef;
+--surface: #ffffff;
+--surface-2: #efece4;
+--foreground: #1c1b19;
+--muted: #6b675e;
+--border: #e2ddd2;
+--accent: #0f6e5f;
+--accent-soft: #dcefe9;
+--warn: #a15c07;
+--warn-soft: #fbecd5;
+--good: #1f7a3b;
+--good-soft: #dff2e3;
+}
+
+@media (prefers-color-scheme: dark) {
+:root {
+    --background: #141412;
+    --surface: #1d1c1a;
+    --surface-2: #26251f;
+    --foreground: #eeebe4;
+    --muted: #a19c90;
+    --border: #34322c;
+    --accent: #4cc2a9;
+    --accent-soft: #163a33;
+    --warn: #f0b35c;
+    --warn-soft: #3a2a12;
+    --good: #6fd38c;
+    --good-soft: #17331f;
+}
+}
+
+@theme inline {
+--color-background: var(--background);
+--color-surface: var(--surface);
+--color-surface-2: var(--surface-2);
+--color-foreground: var(--foreground);
+--color-muted: var(--muted);
+--color-border: var(--border);
+--color-accent: var(--accent);
+--color-accent-soft: var(--accent-soft);
+--color-warn: var(--warn);
+--color-warn-soft: var(--warn-soft);
+--color-good: var(--good);
+--color-good-soft: var(--good-soft);
+--font-sans: var(--font-geist-sans);
+--font-mono: var(--font-geist-mono);
+}
+
+body {
+background: var(--background);
+color: var(--foreground);
+}
+
+@utility card {
+    @apply rounded-2xl border border-border bg-surface p-5;
+}
+@utility btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50;
+}
+@utility btn-primary {
+    @apply btn bg-accent text-white hover:opacity-90 dark:text-black;
+}
+@utility btn-ghost {
+    @apply btn border border-border bg-surface hover:bg-surface-2;
+}
+@utility input {
+    @apply w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20;
+}
+@utility label {
+    @apply mb-1 block text-sm font-medium;
+}
+@utility hint {
+    @apply text-xs text-muted;
+}
+@utility chip {
+    @apply inline-flex cursor-pointer select-none items-center gap-1 rounded-full border border-border bg-surface px-3 py-1 text-sm transition-colors hover:bg-surface-2;
+}
+@utility chip-on {
+    @apply border-accent bg-accent-soft text-accent;
+}
+@utility badge {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+}

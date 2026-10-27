@@ -1,0 +1,223 @@
+import { formatDate, generateWindows, monthsOf } from "./dates";
+import { getAirport, haversineKm, nearbyAirports, THEMED_DESTINATIONS } from "./geo";
+import { getHolidays } from "./holidays";
+import { notifyUser } from "./notify";
+import { confirm, flightProviders, screen } from "./providers/flights";
+import { groundOptions, lastMile } from "./providers/ground";
+import { searchHotels } from "./providers/hotels";
+import { dueAlerts, ensureUser, pruneMatches, saveRun, upsertMatch } from "./repo";
+import type { Alert, FlightOffer, MatchData, Place, RunSummary } from "./types";
+
+const CONFIRM_PER_RUN = Number(process.env.CONFIRM_PER_RUN ?? 4);
+const MAX_MATCHES_PER_RUN = 3;
+// Los precios en caché pueden estar algo desfasados: dejamos pasar candidatos un 15 % por encima.
+const SCREEN_TOLERANCE = 1.15;
+
+// Un aeropuerto de llegada solo tiene sentido si el vuelo te acerca de verdad al destino:
+// no volar a un aeropuerto a menos de 150 km de casa, ni a uno que deje más de la mitad del camino por tierra.
+function worthFlying(origin: string, dest: string, place: Place | null): boolean {
+  const o = getAirport(origin);
+  const d = getAirport(dest);
+  if (!o || !d || !place) return true;
+  const flown = haversineKm(o.lat, o.lon, d.lat, d.lon);
+  const total = haversineKm(o.lat, o.lon, place.lat, place.lon);
+  const rest = haversineKm(d.lat, d.lon, place.lat, place.lon);
+  return flown >= 150 && rest <= total * 0.5;
+}
+
+function destinationAirports(alert: Alert): string[] | null {
+  const c = alert.config;
+  if (c.destination.kind === "anywhere") return null;
+  if (c.destinationAirports.length) return c.destinationAirports;
+  const { lat, lon } = c.destination.place;
+  const near = nearbyAirports(lat, lon, c.airportRadiusKm, 4).map((a) => a.iata);
+  if (c.allowGround) {
+    // Rutas alternativas: aeropuertos grandes más lejanos + tren/bus hasta el destino.
+    const far = nearbyAirports(lat, lon, 400, 20)
+      .filter((a) => a.large && !near.includes(a.iata))
+      .slice(0, 3)
+      .map((a) => a.iata);
+    near.push(...far);
+  }
+  return near;
+}
+
+function anywhereSet(alert: Alert): Set<string> | null {
+  const d = alert.config.destination;
+  if (d.kind !== "anywhere") return null;
+  const themes = d.themes.length ? d.themes : [];
+  let codes = themes.length ? themes.flatMap((t) => THEMED_DESTINATIONS[t] ?? []) : Object.values(THEMED_DESTINATIONS).flat();
+  if (d.countries.length) codes = codes.filter((c) => d.countries.includes(getAirport(c)?.country ?? ""));
+  return new Set(codes);
+}
+
+function destinationPlace(alert: Alert, offer: FlightOffer): Place {
+  const d = alert.config.destination;
+  if (d.kind === "place") return d.place;
+  const a = getAirport(offer.destination);
+  return a ? { label: a.city || a.name, lat: a.lat, lon: a.lon, country: a.country } : { label: offer.destination, lat: 0, lon: 0 };
+}
+
+function flightOk(o: FlightOffer, alert: Alert, tolerance = 1): boolean {
+  const f = alert.config.flight;
+  if (o.price && o.price > f.maxPrice * tolerance) return false;
+  if (o.stops > f.maxStops) return false;
+  if (f.maxDurationHours && o.durationMinutes && o.durationMinutes > f.maxDurationHours * 60) return false;
+  return true;
+}
+
+export async function runAlert(alert: Alert): Promise<RunSummary> {
+  const c = alert.config;
+  const notes: string[] = [];
+  const summary: RunSummary = {
+    at: new Date().toISOString(),
+    windows: 0,
+    screened: 0,
+    candidates: 0,
+    confirmed: 0,
+    flightMatches: 0,
+    fullMatches: 0,
+    notified: 0,
+    notes,
+  };
+
+  const user = await ensureUser(alert.userId);
+  const years = [...new Set(c.dates.months.map((m) => Number(m.slice(0, 4))))];
+  const holidays = c.dates.useHolidays
+    ? await getHolidays(user.holidaysCountry, years, user.holidaysRegion).catch(() => new Set<string>())
+    : new Set<string>();
+  const windows = generateWindows(c.dates, holidays);
+  summary.windows = windows.length;
+  if (!windows.length) {
+    notes.push("No hay fechas futuras que encajen con tus meses y días libres.");
+    await saveRun(alert.id, summary);
+    return summary;
+  }
+  const windowByKey = new Map(windows.map((w) => [`${w.depart}_${w.ret}`, w]));
+
+  // 1) Cribado barato con precios en caché.
+  const dests = destinationAirports(alert);
+  const anyCodes = anywhereSet(alert);
+  if (dests && !dests.length) notes.push("No hay aeropuertos cerca del destino: amplía el radio o activa rutas alternativas.");
+  const raw: FlightOffer[] = [];
+  const targetPlace = c.destination.kind === "place" ? c.destination.place : null;
+  for (const origin of c.origins) {
+    for (const dest of dests ?? [null]) {
+      if (dest === origin) continue;
+      // Los aeropuertos elegidos a mano se respetan siempre; los automáticos se filtran.
+      if (dest && !c.destinationAirports.length && !worthFlying(origin, dest, targetPlace)) continue;
+      for (const month of monthsOf(windows)) {
+        try {
+          raw.push(...(await screen(origin, dest, month, windows, anyCodes ? [...anyCodes].slice(0, 12) : [])));
+        } catch (err) {
+          notes.push(`Cribado ${origin}→${dest ?? "cualquier sitio"} ${month}: ${(err as Error).message}`);
+        }
+      }
+    }
+  }
+  summary.screened = raw.length;
+
+  const best = new Map<string, FlightOffer>();
+  for (const o of raw) {
+    if (!windowByKey.has(`${o.depart}_${o.ret}`)) continue;
+    if (anyCodes && anyCodes.size && !anyCodes.has(o.destination)) continue;
+    if (o.destination === o.origin || !flightOk(o, alert, SCREEN_TOLERANCE)) continue;
+    const k = `${o.origin}|${o.destination}|${o.depart}|${o.ret}`;
+    const prev = best.get(k);
+    if (!prev || o.price < prev.price) best.set(k, o);
+  }
+  const candidates = [...best.values()].sort((a, b) => a.price - b.price || a.depart.localeCompare(b.depart));
+  summary.candidates = candidates.length;
+
+  // 2) Confirmación en vivo (cara) solo de los mejores candidatos.
+  const confirmed: FlightOffer[] = [];
+  for (const cand of candidates.slice(0, CONFIRM_PER_RUN)) {
+    try {
+      const r = await confirm(cand, { maxStops: c.flight.maxStops, passengers: c.flight.passengers });
+      if (r.quotaExhausted) {
+        notes.push("Cupo diario de búsquedas en vivo agotado: se reintentará más tarde.");
+        break;
+      }
+      summary.confirmed++;
+      if (r.offer && flightOk(r.offer, alert)) confirmed.push(r.offer);
+    } catch (err) {
+      notes.push(`Confirmación ${cand.origin}→${cand.destination}: ${(err as Error).message}`);
+    }
+  }
+  confirmed.sort((a, b) => a.price - b.price);
+
+  // 3) Alojamiento, trayecto aeropuerto→destino y avisos.
+  for (const flight of confirmed.slice(0, MAX_MATCHES_PER_RUN)) {
+    const window = windowByKey.get(`${flight.depart}_${flight.ret}`)!;
+    const place = destinationPlace(alert, flight);
+    const data: MatchData = { window, flight, destinationLabel: place.label };
+
+    if (c.hotel) {
+      try {
+        const h = await searchHotels(place, flight.depart, flight.ret, window.nights, c.flight.passengers, c.hotel);
+        if (h.quotaExhausted) notes.push("Cupo de búsquedas de alojamiento agotado por hoy.");
+        data.hotel = h.offers[0];
+      } catch (err) {
+        notes.push(`Alojamiento: ${(err as Error).message}`);
+      }
+    }
+
+    const airport = getAirport(flight.destination);
+    if (airport && place.lat) {
+      const target = data.hotel?.lat
+        ? { label: data.hotel.name, lat: data.hotel.lat, lon: data.hotel.lon! }
+        : { label: place.label, lat: place.lat, lon: place.lon };
+      data.lastMile = await lastMile(airport, target, flight.depart, flight.arriveTime).catch(() => undefined);
+      const fastest = Math.min(...(data.lastMile?.options.map((o) => o.minutes) ?? [Infinity]));
+      if (c.destination.kind === "place" && data.lastMile?.options.length && fastest > c.maxGroundMinutes) {
+        notes.push(`${flight.destination}: el trayecto hasta el destino (${fastest} min) supera tu máximo por tierra.`);
+        continue;
+      }
+    }
+
+    const kind = data.hotel ? "full" : "flight";
+    if (kind === "full") summary.fullMatches++;
+    summary.flightMatches++;
+    const total = flight.price * c.flight.passengers + (data.hotel?.total ?? 0);
+    const key = `${alert.id}|${kind}|${flight.origin}|${flight.destination}|${flight.depart}|${flight.ret}`;
+    const change = await upsertMatch(alert.id, kind, key, total, data);
+
+    const shouldNotify = c.notifyMode === "flight" || kind === "full";
+    if (change && shouldNotify) {
+      const when = `${formatDate(flight.depart)} – ${formatDate(flight.ret)}`;
+      const hotelTxt = data.hotel ? ` + ${data.hotel.name} ${Math.round(data.hotel.total)} €` : "";
+      const title = `${change === "cheaper" ? "⬇️ Baja de precio" : "✈️ ¡Oferta!"} ${c.name}`;
+      const body = `${flight.origin}→${flight.destination} ${when}: vuelo ${flight.price} €/pers${hotelTxt}. Total ${Math.round(total)} €`;
+      if ((await notifyUser(alert.userId, { title, body, path: `/alerts/${alert.id}` })) > 0) summary.notified++;
+    }
+  }
+
+  // Alternativa solo por tierra (tren/bus) desde el punto de salida indicado.
+  if (c.allowGround && c.groundFrom && c.destination.kind === "place") {
+    const opts = await groundOptions(c.groundFrom, c.destination.place, {
+      date: windows[0].depart,
+      hourUtc: 8,
+      country: c.destination.place.country,
+      includeTaxi: false,
+    }).catch(() => []);
+    summary.groundOnly = opts.sort((a, b) => a.minutes - b.minutes)[0];
+  }
+
+  await pruneMatches(alert.id, Math.max(24, c.checkEveryHours * 4));
+  if (flightProviders.screen === "mock") notes.push("Modo demostración: precios simulados (añade claves en .env.local para datos reales).");
+  await saveRun(alert.id, summary);
+  return summary;
+}
+
+export async function runDueAlerts(log = console.log): Promise<number> {
+  const alerts = await dueAlerts();
+  for (const a of alerts) {
+    try {
+      const s = await runAlert(a);
+      log(`[${a.config.name}] fechas=${s.windows} candidatos=${s.candidates} confirmados=${s.confirmed} vuelos=${s.flightMatches} completos=${s.fullMatches} avisos=${s.notified}`);
+    } catch (err) {
+      log(`[${a.config.name}] error: ${(err as Error).message}`);
+    }
+  }
+  return alerts.length;
+}
