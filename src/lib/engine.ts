@@ -229,9 +229,20 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
   return summary;
 }
 
-export async function runDueAlerts(log = console.log): Promise<number> {
-  const alerts = await dueAlerts();
+/**
+ * Ejecuta las alertas pendientes, las más atrasadas primero. Con budgetMs (en la nube, donde
+ * cada llamada tiene un tiempo máximo) para a tiempo y deja el resto para la siguiente llamada.
+ */
+export async function runDueAlerts(log = console.log, budgetMs = Infinity): Promise<number> {
+  const started = Date.now();
+  const alerts = (await dueAlerts()).sort((a, b) => (a.lastRunAt ?? "").localeCompare(b.lastRunAt ?? ""));
+  let done = 0;
   for (const a of alerts) {
+    if (Date.now() - started > budgetMs) {
+      log(`Tiempo agotado: quedan ${alerts.length - done} alertas para la próxima llamada.`);
+      break;
+    }
+    done++;
     try {
       const s = await runAlert(a);
       log(`[${a.config.name}] fechas=${s.windows} candidatos=${s.candidates} confirmados=${s.confirmed} vuelos=${s.flightMatches} completos=${s.fullMatches} avisos=${s.notified}`);
@@ -239,5 +250,5 @@ export async function runDueAlerts(log = console.log): Promise<number> {
       log(`[${a.config.name}] error: ${(err as Error).message}`);
     }
   }
-  return alerts.length;
+  return done;
 }

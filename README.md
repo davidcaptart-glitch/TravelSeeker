@@ -59,11 +59,28 @@ Para usar APIs privadas o de pago (Duffel, Hotelbeds, Booking, Trainline, Omio�
 - `src/app/`: la web (Next.js 16, App Router) y la API (`/api/cron` para un cron externo con `CRON_SECRET`).
 - `scripts/`: `worker`, `setup`, `demo` (crea alertas de ejemplo) y `airports`.
 
-## Despliegue
+## Publicarla y tenerla en el móvil (gratis)
 
-- La base de datos es SQLite local (`data/`). En la nube, apunta `DATABASE_URL`/`DATABASE_AUTH_TOKEN` a Turso (libSQL, plan gratuito).
-- El worker necesita un proceso que esté siempre encendido (Railway, Fly.io, un VPS o tu PC). En plataformas serverless, llama a `GET /api/cron` cada pocos minutos con `Authorization: Bearer $CRON_SECRET`.
-- Las notificaciones push requieren HTTPS (en local: `next dev --experimental-https`).
+La app se publica en **Vercel** desde GitHub: cada `git push` a `main` la vuelve a publicar y los móviles que la tienen instalada reciben la versión nueva solos, sin tiendas.
+
+1. **Base de datos (Turso)**: crea una base de datos en [turso.tech](https://turso.tech) y apunta su URL (`libsql://…`) y un token.
+2. **Vercel**: en [vercel.com](https://vercel.com) → *Add New → Project* → importa este repositorio de GitHub. En *Environment Variables* añade:
+
+   | Variable | Valor |
+   | --- | --- |
+   | `DATABASE_URL` / `DATABASE_AUTH_TOKEN` | los de Turso |
+   | `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | los de tu `.env.local` (si cambian, las suscripciones antiguas dejan de funcionar) |
+   | `CRON_SECRET` | una cadena larga aleatoria |
+   | `APP_URL` | la dirección que te dé Vercel (p. ej. `https://travelseeker.vercel.app`) |
+   | `TRAVELPAYOUTS_TOKEN`, `SERPAPI_KEY`, `TRIPADVISOR_KEY`, `SMTP_URL`… | opcionales, como en local |
+
+3. **Búsqueda continua**: el workflow `.github/workflows/cron.yml` llama a `/api/cron` cada 30 minutos. En GitHub → *Settings → Secrets and variables → Actions* crea `APP_URL` y `CRON_SECRET` (el mismo valor que en Vercel).
+4. **En el móvil (Android, Chrome)**: abre la dirección de la app → menú ⋮ → *Instalar aplicación*. Después, en *Ajustes* de la app, activa las notificaciones.
+
+Notas:
+- Cada llamada a `/api/cron` dura como mucho 5 minutos; si hay muchas alertas pendientes, las que no dé tiempo se hacen en la siguiente llamada (las más atrasadas primero).
+- En local sigue valiendo `npm run worker` en lugar del cron.
+- Las notificaciones push requieren HTTPS (Vercel lo da; en local: `next dev --experimental-https`).
 
 ## Limitaciones conocidas
 
