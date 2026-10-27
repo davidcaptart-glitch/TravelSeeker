@@ -4,11 +4,14 @@ import { take } from "../quota";
 import type { FlightOffer } from "../types";
 import { hash, timeBucket } from "./mock";
 
+import { ryanairFares, ryanairWindows } from "./ryanair";
+
 /**
  * Embudo de vuelos:
- *  - screen(): cribado barato con precios en caché (Travelpayouts/Aviasales Data API, gratis para afiliados).
- *  - confirm(): búsqueda en vivo de unas fechas concretas (SerpApi Google Flights, 250 búsquedas/mes gratis).
- * Sin claves, ambos usan datos simulados.
+ *  - screen(): cribado barato con precios en caché (Travelpayouts/Aviasales Data API, gratis para afiliados)
+ *    + tarifas reales de Ryanair (gratis, sin cupo).
+ *  - confirm(): primero Ryanair (gratis); SerpApi Google Flights (250 búsquedas/mes) solo como último recurso.
+ * Sin claves, lo que no cubre Ryanair usa datos simulados.
  */
 
 const TP_TOKEN = process.env.TRAVELPAYOUTS_TOKEN;
@@ -110,15 +113,24 @@ export async function screen(
   month: string,
   windows: { depart: string; ret: string }[],
   anywhereCandidates: string[] = [],
+  adults = 1,
 ): Promise<FlightOffer[]> {
-  if (flightProviders.screen === "travelpayouts") return screenTravelpayouts(origin, destination, month);
-  const dests = destination ? [destination] : anywhereCandidates;
   const inMonth = windows.filter((w) => w.depart.startsWith(month));
+  const ryanair = await ryanairWindows(origin, destination, inMonth, adults);
+  if (flightProviders.screen === "travelpayouts") {
+    return [...ryanair, ...(await screenTravelpayouts(origin, destination, month))];
+  }
+  // Sin Travelpayouts, los destinos que ya tienen tarifas reales de Ryanair no se rellenan.
+  const covered = new Set(ryanair.map((o) => o.destination));
+  const dests = (destination ? [destination] : anywhereCandidates).filter((d) => !covered.has(d));
   if (flightProviders.screen === "none") {
     // Sin cribado: todas las fechas pasan a confirmación (precio desconocido = 0 para ordenar por fecha).
-    return dests.flatMap((d) => inMonth.map((w) => ({ ...mockOffer(origin, d, w.depart, w.ret, true), provider: "sin-cribado", price: 0 })));
+    return [
+      ...ryanair,
+      ...dests.flatMap((d) => inMonth.map((w) => ({ ...mockOffer(origin, d, w.depart, w.ret, true), provider: "sin-cribado", price: 0 }))),
+    ];
   }
-  return dests.flatMap((d) => inMonth.map((w) => mockOffer(origin, d, w.depart, w.ret, true)));
+  return [...ryanair, ...dests.flatMap((d) => inMonth.map((w) => mockOffer(origin, d, w.depart, w.ret, true)))];
 }
 
 type SerpFlight = {
@@ -128,13 +140,27 @@ type SerpFlight = {
   price?: number;
 };
 
-export type ConfirmResult = { offer: FlightOffer | null; quotaExhausted?: boolean };
+/**
+ * paid: se gastó una búsqueda del cupo. skipped: hacía falta una búsqueda de pago y no se permitió.
+ */
+export type ConfirmResult = { offer: FlightOffer | null; paid?: boolean; skipped?: boolean; quotaExhausted?: boolean };
+
+// Si Ryanair está como mucho un 5 % por encima del precio cribado, se da por buena sin gastar cupo.
+const RYANAIR_TOLERANCE = 1.05;
 
 export async function confirm(
   candidate: FlightOffer,
-  opts: { maxStops: number; passengers: number },
+  opts: { maxStops: number; passengers: number; allowPaid: boolean },
 ): Promise<ConfirmResult> {
   const { origin, destination, depart, ret } = candidate;
+
+  // 1) Gratis: tarifa real de Ryanair para esas fechas (normalmente ya en caché desde el cribado).
+  const ryr = (await ryanairFares(origin, destination, depart, ret, opts.passengers).catch(() => [])).find(
+    (o) => o.destination === destination,
+  );
+  if (candidate.provider === "ryanair") return { offer: ryr ?? null };
+  if (ryr && ryr.price <= candidate.price * RYANAIR_TOLERANCE) return { offer: ryr };
+
   if (flightProviders.confirm === "cached") return { offer: candidate };
   if (flightProviders.confirm === "mock") {
     // La búsqueda "en vivo" simulada puede variar un poco respecto al precio en caché.
@@ -146,9 +172,12 @@ export async function confirm(
   const key = `serp:f:${origin}:${destination}:${depart}:${ret}:${opts.maxStops}:${opts.passengers}`;
   const existing = await peekCache<FlightOffer | null>(key);
   if (existing !== undefined) return { offer: existing };
+  // 2) Último recurso, con cupo: Google Flights vía SerpApi.
+  if (!opts.allowPaid) return { offer: null, skipped: true };
   if (!(await take("serpapi"))) return { offer: null, quotaExhausted: true };
 
   return {
+    paid: true,
     offer: await cached(key, 4 * 3600, async () => {
       const params = new URLSearchParams({
         engine: "google_flights",

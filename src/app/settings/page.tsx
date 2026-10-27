@@ -36,9 +36,11 @@ async function SettingsContent() {
       <section className="card space-y-2 text-sm">
         <h2 className="font-semibold">Fuentes de datos</h2>
         <ul className="space-y-1">
-          <li>Cribado de vuelos: {PROVIDER_TEXT[flightProviders.screen]}</li>
-          <li>Confirmación de vuelos: {PROVIDER_TEXT[flightProviders.confirm]}</li>
-          <li>Alojamiento: {PROVIDER_TEXT[hotelProvider]}</li>
+          <li>Vuelos de Ryanair: tarifas reales (gratis, sin cupo)</li>
+          <li>Cribado del resto de vuelos: {PROVIDER_TEXT[flightProviders.screen]}</li>
+          <li>Confirmación del resto (último recurso): {PROVIDER_TEXT[flightProviders.confirm]}</li>
+          <li>Alojamiento: Xotelo · precios de Booking, Agoda, Trip.com… (gratis, sin cupo)</li>
+          <li>Alojamiento donde Xotelo no llega: {PROVIDER_TEXT[hotelProvider]}</li>
           <li>Tren, bus y transporte urbano: Transitous (horarios reales, gratis)</li>
           <li>Taxi: distancia real con OSRM × tarifa aproximada del país</li>
           <li>Festivos: Nager.Date</li>

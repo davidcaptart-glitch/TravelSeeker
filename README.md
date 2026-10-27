@@ -19,15 +19,17 @@ npm run dev       # la web en http://localhost:3000
 npm run worker    # en otra terminal: el buscador continuo
 ```
 
-Sin claves de API funciona en **modo demostración** (precios simulados). Las rutas por tierra, el taxi y los festivos ya usan datos reales.
+Sin claves de API ya usa datos reales para los vuelos de **Ryanair**, el **alojamiento** (Xotelo), las rutas por tierra, el taxi y los festivos. Solo el resto de vuelos sale simulado hasta que añadas las claves.
 
 ## Fuentes de datos (gratuitas)
 
 | Qué | Fuente | Clave |
 | --- | --- | --- |
-| Cribado de vuelos (barato, precios en caché) | Travelpayouts / Aviasales Data API | `TRAVELPAYOUTS_TOKEN` (gratis al darte de alta como afiliado) |
-| Confirmación de vuelos en vivo | SerpApi · Google Flights | `SERPAPI_KEY` (250 búsquedas/mes gratis) |
-| Alojamiento | SerpApi · Google Hotels | la misma `SERPAPI_KEY` (comparte cupo) |
+| Vuelos de Ryanair (precio real, también "a cualquier sitio") | API pública del buscador de Ryanair (no oficial) | no, sin cupo |
+| Cribado del resto de vuelos (precios en caché) | Travelpayouts / Aviasales Data API | `TRAVELPAYOUTS_TOKEN` (gratis al darte de alta como afiliado) |
+| Confirmación en vivo del resto (último recurso) | SerpApi · Google Flights | `SERPAPI_KEY` (250 búsquedas/mes gratis) |
+| Alojamiento (Booking, Agoda, Trip.com…) | Xotelo (precios de TripAdvisor) + código de ciudad de Wikidata | no, sin cupo |
+| Alojamiento donde Xotelo no llega | SerpApi · Google Hotels | la misma `SERPAPI_KEY` (comparte cupo) |
 | Tren, bus, metro… | Transitous (MOTIS) | no |
 | Taxi | OSRM (distancia real) × tarifa aproximada del país | no |
 | Lugares y estaciones | Photon (OpenStreetMap) | no |
@@ -40,8 +42,8 @@ Las búsquedas en vivo gratuitas son pocas, así que cada alerta funciona como u
 
 1. **Fechas**: se generan todas las combinaciones ida/vuelta posibles según tus meses y días libres.
 2. **Cribado**: precios en caché de Travelpayouts, muchas consultas y sin coste. Pasan los que están hasta un 15 % por encima de tu precio.
-3. **Confirmación**: solo los mejores candidatos (`CONFIRM_PER_RUN`) se comprueban en vivo, con un cupo diario repartido para no agotar el mes (`SERPAPI_MONTHLY_LIMIT`).
-4. **Alojamiento y trayecto** solo para los vuelos que cumplen.
+3. **Confirmación**: primero con Ryanair (gratis). Solo si el vuelo es de otra aerolínea se gasta una búsqueda de SerpApi, como mucho `CONFIRM_PER_RUN` por ejecución y con un cupo diario repartido para no agotar el mes (`SERPAPI_MONTHLY_LIMIT`).
+4. **Alojamiento y trayecto** solo para los vuelos que cumplen (alojamiento con Xotelo; SerpApi solo si la ciudad no está).
 5. **Aviso** si el resultado es nuevo o ha bajado al menos un 5 %.
 
 Para usar APIs privadas o de pago (Duffel, Hotelbeds, Booking, Trainline, Omio…) basta con añadir un adaptador en `src/lib/providers/`.
@@ -65,4 +67,5 @@ Para usar APIs privadas o de pago (Duffel, Hotelbeds, Booking, Trainline, Omio�
 
 - Los precios de tren, bus y taxi son **estimaciones**. La app enlaza a Trainline, Omio, FlixBus y Google Maps para ver el precio real.
 - Para fechas lejanas, los horarios de transporte público se consultan en un día equivalente de las próximas semanas.
+- Ryanair y Xotelo son APIs públicas pero no oficiales: si cambian, el embudo sigue con las demás fuentes. Xotelo no da estrellas, así que el filtro de estrellas solo se aplica cuando la fuente las tiene.
 - Los usuarios son anónimos (una cookie por dispositivo). Para cuentas con inicio de sesión hay que añadir autenticación.

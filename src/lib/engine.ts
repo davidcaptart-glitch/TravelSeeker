@@ -8,7 +8,10 @@ import { searchHotels } from "./providers/hotels";
 import { dueAlerts, ensureUser, pruneMatches, saveRun, upsertMatch } from "./repo";
 import type { Alert, FlightOffer, MatchData, Place, RunSummary } from "./types";
 
+// Búsquedas de pago (SerpApi) por ejecución; las de Ryanair no cuentan.
 const CONFIRM_PER_RUN = Number(process.env.CONFIRM_PER_RUN ?? 4);
+// Candidatos que se revisan como mucho por ejecución (la mayoría se resuelven gratis o desde la caché).
+const MAX_CANDIDATES = 40;
 const MAX_MATCHES_PER_RUN = 3;
 // Los precios en caché pueden estar algo desfasados: dejamos pasar candidatos un 15 % por encima.
 const SCREEN_TOLERANCE = 1.15;
@@ -108,7 +111,9 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
       if (dest && !c.destinationAirports.length && !worthFlying(origin, dest, targetPlace)) continue;
       for (const month of monthsOf(windows)) {
         try {
-          raw.push(...(await screen(origin, dest, month, windows, anyCodes ? [...anyCodes].slice(0, 12) : [])));
+          raw.push(
+            ...(await screen(origin, dest, month, windows, anyCodes ? [...anyCodes].slice(0, 12) : [], c.flight.passengers)),
+          );
         } catch (err) {
           notes.push(`Cribado ${origin}→${dest ?? "cualquier sitio"} ${month}: ${(err as Error).message}`);
         }
@@ -129,15 +134,25 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
   const candidates = [...best.values()].sort((a, b) => a.price - b.price || a.depart.localeCompare(b.depart));
   summary.candidates = candidates.length;
 
-  // 2) Confirmación en vivo (cara) solo de los mejores candidatos.
+  // 2) Confirmación en vivo: gratis con Ryanair; las de pago (SerpApi) solo para los mejores CONFIRM_PER_RUN.
   const confirmed: FlightOffer[] = [];
-  for (const cand of candidates.slice(0, CONFIRM_PER_RUN)) {
+  let paid = 0;
+  let quotaHit = false;
+  for (const cand of candidates.slice(0, MAX_CANDIDATES)) {
+    if (confirmed.length >= MAX_MATCHES_PER_RUN * 2) break;
     try {
-      const r = await confirm(cand, { maxStops: c.flight.maxStops, passengers: c.flight.passengers });
+      const r = await confirm(cand, {
+        maxStops: c.flight.maxStops,
+        passengers: c.flight.passengers,
+        allowPaid: !quotaHit && paid < CONFIRM_PER_RUN,
+      });
       if (r.quotaExhausted) {
+        quotaHit = true;
         notes.push("Cupo diario de búsquedas en vivo agotado: se reintentará más tarde.");
-        break;
+        continue;
       }
+      if (r.skipped) continue;
+      if (r.paid) paid++;
       summary.confirmed++;
       if (r.offer && flightOk(r.offer, alert)) confirmed.push(r.offer);
     } catch (err) {
@@ -204,7 +219,9 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
   }
 
   await pruneMatches(alert.id, Math.max(24, c.checkEveryHours * 4));
-  if (flightProviders.screen === "mock") notes.push("Modo demostración: precios simulados (añade claves en .env.local para datos reales).");
+  if (flightProviders.screen === "mock") {
+    notes.push("Sin claves: los precios de Ryanair son reales; el resto de vuelos, simulados (añade claves en .env.local).");
+  }
   await saveRun(alert.id, summary);
   return summary;
 }

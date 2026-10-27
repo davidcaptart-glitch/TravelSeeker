@@ -33,7 +33,8 @@ async function HomeContent() {
         </div>
         <div className="text-right text-xs text-muted">
           <div>
-            Cribado: <b>{flightProviders.screen}</b> · Confirmación: <b>{flightProviders.confirm}</b>
+            Gratis: <b>ryanair, xotelo</b> · Cribado: <b>{flightProviders.screen}</b> · Confirmación:{" "}
+            <b>{flightProviders.confirm}</b>
           </div>
           {flightProviders.confirm === "serpapi" && (
             <div>

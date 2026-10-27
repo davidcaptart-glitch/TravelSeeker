@@ -3,7 +3,10 @@ import { take } from "../quota";
 import type { AlertConfig, HotelOffer, Place } from "../types";
 import { hash, timeBucket } from "./mock";
 
-// Alojamiento: SerpApi Google Hotels (comparte el cupo gratuito con los vuelos) o datos simulados.
+import { xoteloHotels } from "./xotelo";
+
+// Alojamiento: primero Xotelo (gratis, sin cupo). Si la ciudad no está, SerpApi Google Hotels
+// (comparte el cupo gratuito con los vuelos) o, sin clave, datos simulados.
 const SERPAPI_KEY = process.env.SERPAPI_KEY;
 export const hotelProvider = SERPAPI_KEY ? "serpapi" : "mock";
 
@@ -14,7 +17,8 @@ export function hotelMatches(h: HotelOffer, c: HotelCriteria): boolean {
   if (c.maxPricePerNight && h.pricePerNight > c.maxPricePerNight) return false;
   if (c.maxTotal && h.total > c.maxTotal) return false;
   if (c.minRating && (h.rating ?? 0) < c.minRating) return false;
-  if (c.minStars && h.type === "hotel" && (h.stars ?? 0) < c.minStars) return false;
+  // Algunas fuentes (Xotelo) no dan estrellas: entonces solo se filtra por nota.
+  if (c.minStars && h.type === "hotel" && h.stars !== undefined && h.stars < c.minStars) return false;
   return true;
 }
 
@@ -127,7 +131,10 @@ export async function searchHotels(
 ): Promise<HotelSearch> {
   let offers: HotelOffer[] = [];
   let quotaExhausted = false;
-  if (hotelProvider === "mock") {
+  const free = await xoteloHotels(place, checkIn, checkOut, guests, criteria).catch(() => null);
+  if (free?.available) {
+    offers = free.offers;
+  } else if (hotelProvider === "mock") {
     offers = mockHotels(place, checkIn, checkOut, nights, guests);
   } else {
     const wantsHotels = criteria.types.some((t) => t !== "apartment");
