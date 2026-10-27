@@ -15,32 +15,69 @@ const KNOWN_GEOS: { lat: number; lon: number; geo: string }[] = [
   { lat: 50.0614, lon: 19.9372, geo: "g274772" }, // Cracovia
 ];
 
+// Opcional: TripAdvisor Content API (plan gratuito con cupo mensual), solo para buscar el código de ciudad.
+const TRIPADVISOR_KEY = process.env.TRIPADVISOR_KEY;
+
+/** Códigos de lugares poblados cercanos según Wikidata (P3134), de más a menos habitantes. */
+async function wikidataGeos(place: Place): Promise<string[]> {
+  const q = `SELECT DISTINCT ?ta ?pop WHERE {
+    SERVICE wikibase:around { ?item wdt:P625 ?loc . bd:serviceParam wikibase:center "Point(${place.lon} ${place.lat})"^^geo:wktLiteral . bd:serviceParam wikibase:radius "12" . }
+    ?item wdt:P1082 ?pop ; wdt:P3134 ?ta .
+  } ORDER BY DESC(?pop) LIMIT 4`;
+  const res = await fetch(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(q)}`, {
+    headers: UA,
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`Wikidata ${res.status}`);
+  const json = (await res.json()) as { results: { bindings: { ta: { value: string } }[] } };
+  return [...new Set(json.results.bindings.map((b) => b.ta.value).filter((v) => /^\d+$/.test(v)))];
+}
+
+/** Búsqueda de ciudades con la API oficial de TripAdvisor (necesita TRIPADVISOR_KEY). */
+async function tripadvisorApiGeos(place: Place): Promise<string[]> {
+  if (!TRIPADVISOR_KEY) return [];
+  const p = new URLSearchParams({
+    key: TRIPADVISOR_KEY,
+    searchQuery: place.label.split(",")[0].trim(),
+    category: "geos",
+    latLong: `${place.lat},${place.lon}`,
+    radius: "30",
+    radiusUnit: "km",
+    language: "es",
+  });
+  const res = await fetch(`https://api.content.tripadvisor.com/api/v1/location/search?${p}`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`TripAdvisor ${res.status}`);
+  const json = (await res.json()) as { data?: { location_id: number | string }[]; error?: { message: string } };
+  if (json.error) throw new Error(`TripAdvisor: ${json.error.message}`);
+  return (json.data ?? []).map((d) => String(d.location_id)).filter((v) => /^\d+$/.test(v));
+}
+
 /**
- * Código de ciudad de TripAdvisor ("g187147") para el lugar. Se prueban los lugares poblados
- * cercanos con código, de más a menos habitantes, y se acepta el primero cuyos alojamientos
- * estén de verdad alrededor del destino (descarta regiones, países y pueblos vecinos).
+ * Código de ciudad de TripAdvisor ("g187147") para el lugar. Candidatos de Wikidata y, si hay
+ * clave, de la API de TripAdvisor; se acepta el primero cuyos alojamientos estén de verdad
+ * alrededor del destino (descarta regiones, países y pueblos vecinos).
  */
 export async function tripadvisorGeo(place: Place, radiusKm = 8): Promise<string | null> {
   const known = KNOWN_GEOS.find((k) => haversineKm(k.lat, k.lon, place.lat, place.lon) < 15);
   if (known) return known.geo;
-  return cached(`ta-geo:${place.lat.toFixed(2)},${place.lon.toFixed(2)}`, 90 * 86400, async () => {
-    const q = `SELECT DISTINCT ?ta ?pop WHERE {
-      SERVICE wikibase:around { ?item wdt:P625 ?loc . bd:serviceParam wikibase:center "Point(${place.lon} ${place.lat})"^^geo:wktLiteral . bd:serviceParam wikibase:radius "12" . }
-      ?item wdt:P1082 ?pop ; wdt:P3134 ?ta .
-    } ORDER BY DESC(?pop) LIMIT 4`;
-    const res = await fetch(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(q)}`, {
-      headers: UA,
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!res.ok) throw new Error(`Wikidata ${res.status}`);
-    const json = (await res.json()) as { results: { bindings: { ta: { value: string } }[] } };
-    const geos = [...new Set(json.results.bindings.map((b) => b.ta.value).filter((v) => /^\d+$/.test(v)))];
-    for (const ta of geos) {
-      const list = await xoteloList(`g${ta}`).catch(() => []);
-      const near = list.filter(
-        (h) => h.geo && haversineKm(h.geo.latitude, h.geo.longitude, place.lat, place.lon) <= radiusKm,
-      ).length;
-      if (list.length && near / list.length >= 0.3) return `g${ta}`;
+  // Con clave se usa otra entrada de caché: un "no encontrado" sin clave no bloquea el reintento.
+  const key = `ta-geo:${TRIPADVISOR_KEY ? "api:" : ""}${place.lat.toFixed(2)},${place.lon.toFixed(2)}`;
+  return cached(key, 90 * 86400, async () => {
+    const tried = new Set<string>();
+    for (const source of [wikidataGeos, tripadvisorApiGeos]) {
+      const geos = await source(place).catch(() => [] as string[]);
+      for (const ta of geos) {
+        if (tried.has(ta)) continue;
+        tried.add(ta);
+        const list = await xoteloList(`g${ta}`).catch(() => []);
+        const near = list.filter(
+          (h) => h.geo && haversineKm(h.geo.latitude, h.geo.longitude, place.lat, place.lon) <= radiusKm,
+        ).length;
+        if (list.length && near / list.length >= 0.3) return `g${ta}`;
+      }
     }
     return null;
   });

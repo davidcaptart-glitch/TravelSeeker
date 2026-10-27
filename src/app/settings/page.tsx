@@ -40,6 +40,10 @@ async function SettingsContent() {
           <li>Cribado del resto de vuelos: {PROVIDER_TEXT[flightProviders.screen]}</li>
           <li>Confirmación del resto (último recurso): {PROVIDER_TEXT[flightProviders.confirm]}</li>
           <li>Alojamiento: Xotelo · precios de Booking, Agoda, Trip.com… (gratis, sin cupo)</li>
+          <li>
+            Ciudad en TripAdvisor: Wikidata
+            {process.env.TRIPADVISOR_KEY ? " + API oficial de TripAdvisor" : " (añade TRIPADVISOR_KEY para cubrir más destinos)"}
+          </li>
           <li>Alojamiento donde Xotelo no llega: {PROVIDER_TEXT[hotelProvider]}</li>
           <li>Tren, bus y transporte urbano: Transitous (horarios reales, gratis)</li>
           <li>Taxi: distancia real con OSRM × tarifa aproximada del país</li>

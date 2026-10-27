@@ -23,6 +23,10 @@ SERPAPI_KEY=
 SERPAPI_MONTHLY_LIMIT=250
 CONFIRM_PER_RUN=4
 
+# Alojamiento — opcional: encuentra la ciudad en TripAdvisor cuando Wikidata no la tiene
+# (Content API, plan gratuito en tripadvisor.com/developers)
+TRIPADVISOR_KEY=
+
 # Email opcional, p. ej. smtps://usuario:contraseña@smtp.gmail.com:465
 SMTP_URL=
 MAIL_FROM=

@@ -29,6 +29,7 @@ Sin claves de API ya usa datos reales para los vuelos de **Ryanair**, el **aloja
 | Cribado del resto de vuelos (precios en caché) | Travelpayouts / Aviasales Data API | `TRAVELPAYOUTS_TOKEN` (gratis al darte de alta como afiliado) |
 | Confirmación en vivo del resto (último recurso) | SerpApi · Google Flights | `SERPAPI_KEY` (250 búsquedas/mes gratis) |
 | Alojamiento (Booking, Agoda, Trip.com…) | Xotelo (precios de TripAdvisor) + código de ciudad de Wikidata | no, sin cupo |
+| Código de ciudad de TripAdvisor cuando Wikidata no lo tiene (opcional) | TripAdvisor Content API | `TRIPADVISOR_KEY` (plan gratuito con cupo mensual; una consulta por destino nuevo) |
 | Alojamiento donde Xotelo no llega | SerpApi · Google Hotels | la misma `SERPAPI_KEY` (comparte cupo) |
 | Tren, bus, metro… | Transitous (MOTIS) | no |
 | Taxi | OSRM (distancia real) × tarifa aproximada del país | no |
@@ -68,5 +69,5 @@ Para usar APIs privadas o de pago (Duffel, Hotelbeds, Booking, Trainline, Omio�
 - Los precios de tren, bus y taxi son **estimaciones**. La app enlaza a Trainline, Omio, FlixBus y Google Maps para ver el precio real.
 - Para fechas lejanas, los horarios de transporte público se consultan en un día equivalente de las próximas semanas.
 - Ryanair y Xotelo son APIs públicas pero no oficiales: si cambian, el embudo sigue con las demás fuentes. Xotelo no da estrellas, así que el filtro de estrellas solo se aplica cuando la fuente las tiene.
-- El código de ciudad de TripAdvisor se busca solo en Wikidata. Si un destino no lo tiene, la alerta lo indica y basta con pegar el enlace de la ciudad en TripAdvisor en el apartado Alojamiento.
+- El código de ciudad de TripAdvisor se busca en Wikidata y, con `TRIPADVISOR_KEY`, en la API oficial de TripAdvisor. Si aun así no aparece, la alerta lo indica y basta con pegar el enlace de la ciudad en TripAdvisor en el apartado Alojamiento.
 - Los usuarios son anónimos (una cookie por dispositivo). Para cuentas con inicio de sesión hay que añadir autenticación.
