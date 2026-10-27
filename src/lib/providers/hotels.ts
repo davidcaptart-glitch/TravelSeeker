@@ -119,7 +119,8 @@ async function serpHotels(
   });
 }
 
-export type HotelSearch = { offers: HotelOffer[]; quotaExhausted: boolean };
+// cityNotFound: Xotelo no pudo usarse porque no se encontró el código de la ciudad.
+export type HotelSearch = { offers: HotelOffer[]; quotaExhausted: boolean; cityNotFound: boolean };
 
 export async function searchHotels(
   place: Place,
@@ -150,5 +151,6 @@ export async function searchHotels(
   return {
     offers: offers.filter((o) => hotelMatches(o, criteria)).sort((a, b) => a.total - b.total),
     quotaExhausted,
+    cityNotFound: free?.available === false,
   };
 }

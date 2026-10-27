@@ -171,6 +171,8 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
       try {
         const h = await searchHotels(place, flight.depart, flight.ret, window.nights, c.flight.passengers, c.hotel);
         if (h.quotaExhausted) notes.push("Cupo de búsquedas de alojamiento agotado por hoy.");
+        const cityNote = `No encuentro ${place.label} en TripAdvisor: pega el enlace de la ciudad en la alerta (Alojamiento) para tener precios gratis.`;
+        if (h.cityNotFound && !notes.includes(cityNote)) notes.push(cityNote);
         data.hotel = h.offers[0];
       } catch (err) {
         notes.push(`Alojamiento: ${(err as Error).message}`);

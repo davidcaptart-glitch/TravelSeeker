@@ -68,4 +68,5 @@ Para usar APIs privadas o de pago (Duffel, Hotelbeds, Booking, Trainline, Omio�
 - Los precios de tren, bus y taxi son **estimaciones**. La app enlaza a Trainline, Omio, FlixBus y Google Maps para ver el precio real.
 - Para fechas lejanas, los horarios de transporte público se consultan en un día equivalente de las próximas semanas.
 - Ryanair y Xotelo son APIs públicas pero no oficiales: si cambian, el embudo sigue con las demás fuentes. Xotelo no da estrellas, así que el filtro de estrellas solo se aplica cuando la fuente las tiene.
+- El código de ciudad de TripAdvisor se busca solo en Wikidata. Si un destino no lo tiene, la alerta lo indica y basta con pegar el enlace de la ciudad en TripAdvisor en el apartado Alojamiento.
 - Los usuarios son anónimos (una cookie por dispositivo). Para cuentas con inicio de sesión hay que añadir autenticación.

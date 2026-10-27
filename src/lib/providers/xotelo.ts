@@ -114,10 +114,11 @@ export async function xoteloHotels(
   checkIn: string,
   checkOut: string,
   guests: number,
-  wanted: { types: HotelOffer["type"][]; maxPricePerNight?: number; minRating?: number },
+  wanted: { types: HotelOffer["type"][]; maxPricePerNight?: number; minRating?: number; tripadvisorGeo?: string },
   radiusKm = 8,
 ): Promise<XoteloSearch> {
-  const geo = await tripadvisorGeo(place, radiusKm);
+  // El código puesto a mano en la alerta manda sobre el que se busca en Wikidata.
+  const geo = wanted.tripadvisorGeo ?? (await tripadvisorGeo(place, radiusKm));
   if (!geo) return { offers: [], available: false };
   const list = await xoteloList(geo);
   if (!list.length) return { offers: [], available: false };

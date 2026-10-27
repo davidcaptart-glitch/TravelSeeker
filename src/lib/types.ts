@@ -57,11 +57,19 @@ export const alertConfigSchema = z.object({
       maxTotal: z.number().positive().optional(),
       minRating: z.number().min(0).max(5).optional(),
       minStars: z.number().int().min(0).max(5).optional(),
+      // Código de ciudad de TripAdvisor ("g274772") cuando no se encuentra solo.
+      tripadvisorGeo: z.string().regex(/^g\d+$/).optional(),
     })
     .optional(),
   checkEveryHours: z.number().min(1).max(48).default(6),
 });
 export type AlertConfig = z.infer<typeof alertConfigSchema>;
+
+/** Saca el código de ciudad ("g274772") de un enlace de TripAdvisor o del propio código. */
+export function parseTripadvisorGeo(text: string): string | undefined {
+  const m = text.trim().match(/(?:^|[^a-z0-9])g(\d{3,})(?:[^0-9]|$)/i);
+  return m ? `g${m[1]}` : undefined;
+}
 
 export type Alert = {
   id: string;

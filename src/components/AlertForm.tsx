@@ -4,7 +4,7 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import { saveAlert, type FormState } from "@/app/actions";
 import { formatDate, generateWindows } from "@/lib/dates";
 import { monthLabel } from "@/lib/format";
-import { DESTINATION_THEMES, HOTEL_TYPES, type AlertConfig, type Place } from "@/lib/types";
+import { DESTINATION_THEMES, HOTEL_TYPES, parseTripadvisorGeo, type AlertConfig, type Place } from "@/lib/types";
 import { AirportMultiPicker, DateList, NearbyAirports, PlacePicker } from "./pickers";
 
 type Draft = Omit<AlertConfig, "destination" | "hotel"> & {
@@ -75,7 +75,9 @@ function toConfig(d: Draft): AlertConfig {
     groundFrom: d.allowGround ? d.groundFrom : undefined,
     dates: d.dates,
     flight: d.flight,
-    hotel: d.hotelOn ? d.hotel : undefined,
+    hotel: d.hotelOn
+      ? { ...d.hotel, tripadvisorGeo: d.destKind === "place" ? d.hotel.tripadvisorGeo : undefined }
+      : undefined,
     checkEveryHours: d.checkEveryHours,
   };
 }
@@ -118,6 +120,8 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
   const setDates = (patch: Partial<Draft["dates"]>) => setD((p) => ({ ...p, dates: { ...p.dates, ...patch } }));
   const setFlight = (patch: Partial<Draft["flight"]>) => setD((p) => ({ ...p, flight: { ...p.flight, ...patch } }));
   const setHotel = (patch: Partial<Draft["hotel"]>) => setD((p) => ({ ...p, hotel: { ...p.hotel, ...patch } }));
+  // Texto tal cual lo pega el usuario (enlace o código); en la alerta se guarda solo el código.
+  const [taText, setTaText] = useState(d.hotel.tripadvisorGeo ?? "");
 
   // Festivos del usuario para previsualizar las fechas exactas que se buscarán.
   const years = [...new Set(d.dates.months.map((m) => m.slice(0, 4)))].join(",");
@@ -460,6 +464,27 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                 </select>
               </div>
             </div>
+            {d.destKind === "place" && (
+              <div>
+                <label className="label">Ciudad en TripAdvisor (opcional)</label>
+                <input
+                  className="input"
+                  placeholder="https://www.tripadvisor.es/Tourism-g274772-Krakow…  o  g274772"
+                  value={taText}
+                  onChange={(e) => {
+                    setTaText(e.target.value);
+                    setHotel({ tripadvisorGeo: parseTripadvisorGeo(e.target.value) });
+                  }}
+                />
+                <p className="hint mt-1">
+                  {taText.trim() && !d.hotel.tripadvisorGeo
+                    ? "No encuentro el código en ese texto: debe contener algo como g274772."
+                    : d.hotel.tripadvisorGeo
+                      ? `Se usará el código ${d.hotel.tripadvisorGeo} para los precios de alojamiento.`
+                      : "Normalmente se detecta solo. Si no aparecen alojamientos, pega aquí el enlace de la ciudad en TripAdvisor."}
+                </p>
+              </div>
+            )}
           </>
         )}
       </Section>
