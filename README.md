@@ -78,6 +78,8 @@ La app se publica en **Vercel** desde GitHub: cada `git push` a `main` la vuelve
 4. **En el móvil (Android, Chrome)**: abre la dirección de la app → menú ⋮ → *Instalar aplicación*. Después, en *Ajustes* de la app, activa las notificaciones.
 
 Notas:
+- Tus alertas van ligadas a un identificador que se ve en *Ajustes*. Para usarlas en otro móvil (o si borras los datos del navegador), pega ese identificador en *Ajustes → Tus alertas en otro dispositivo*.
+- `npm run migrate -- --env-file=<archivo>` copia las alertas de la base de datos local a Turso (el archivo debe tener `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN`, p. ej. de `vercel env pull`).
 - Cada llamada a `/api/cron` dura como mucho 5 minutos; si hay muchas alertas pendientes, las que no dé tiempo se hacen en la siguiente llamada (las más atrasadas primero).
 - En local sigue valiendo `npm run worker` en lugar del cron.
 - Las notificaciones push requieren HTTPS (Vercel lo da; en local: `next dev --experimental-https`).

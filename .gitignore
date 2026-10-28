@@ -42,3 +42,8 @@ next-env.d.ts
 
 # datos locales
 /data/
+
+# Ayudas para agentes de IA instaladas por integraciones (p. ej. Turso)
+/.agents/
+/.claude/skills/
+skills-lock.json

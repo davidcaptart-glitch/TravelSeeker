@@ -1,12 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { runAlert } from "@/lib/engine";
 import { notifyUser } from "@/lib/notify";
 import * as repo from "@/lib/repo";
 import { currentUserId } from "@/lib/session";
+import { USER_COOKIE, USER_COOKIE_OPTIONS } from "@/lib/identity";
 import { alertConfigSchema } from "@/lib/types";
 
 export type FormState = { error?: string } | undefined;
@@ -83,6 +85,19 @@ export async function saveSettings(_prev: FormState, formData: FormData): Promis
   });
   revalidatePath("/settings");
   return {};
+}
+
+/**
+ * Usar en este dispositivo las alertas de otro (el identificador está en Ajustes del otro dispositivo).
+ * Solo se aceptan identificadores con alertas, para no crear usuarios vacíos por error.
+ */
+export async function linkDevice(_prev: FormState, formData: FormData): Promise<FormState> {
+  const id = String(formData.get("userId") ?? "").trim().toLowerCase();
+  if (!z.uuid().safeParse(id).success) return { error: "Ese identificador no es válido." };
+  if (id === (await currentUserId())) return { error: "Ya estás usando ese identificador." };
+  if (!(await repo.userHasAlerts(id))) return { error: "No hay alertas con ese identificador." };
+  (await cookies()).set({ name: USER_COOKIE, value: id, ...USER_COOKIE_OPTIONS });
+  redirect("/");
 }
 
 const pushSchema = z.object({ endpoint: z.url(), keys: z.object({ p256dh: z.string(), auth: z.string() }) });

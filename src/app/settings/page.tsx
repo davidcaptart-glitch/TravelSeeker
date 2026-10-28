@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Loading from "@/app/loading";
+import { LinkDeviceForm } from "@/components/LinkDeviceForm";
 import { PushManager } from "@/components/PushManager";
 import { SettingsForm } from "@/components/SettingsForm";
 import { flightProviders } from "@/lib/providers/flights";
@@ -33,6 +34,11 @@ async function SettingsContent() {
         <SettingsForm email={user.email ?? ""} country={user.holidaysCountry} region={user.holidaysRegion ?? ""} />
       </section>
 
+      <section className="card space-y-3">
+        <h2 className="font-semibold">Tus alertas en otro dispositivo</h2>
+        <LinkDeviceForm userId={user.id} />
+      </section>
+
       <section className="card space-y-2 text-sm">
         <h2 className="font-semibold">Fuentes de datos</h2>
         <ul className="space-y-1">
@@ -54,7 +60,6 @@ async function SettingsContent() {
             Búsquedas en vivo: {serp.usedMonth}/{serp.limit} este mes · {serp.usedToday}/{serp.todayBudget} hoy
           </p>
         )}
-        <p className="hint">Tu identificador de usuario: {user.id}</p>
       </section>
     </div>
   );

@@ -1,12 +1,13 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { connection } from "next/server";
+import { USER_COOKIE } from "./identity";
 import { ensureUser } from "./repo";
 
 export async function currentUserId(): Promise<string> {
   // Las páginas con sesión se renderizan siempre en cada petición (usan la hora actual, la BD...).
   await connection();
-  const id = (await cookies()).get("ts_uid")?.value;
+  const id = (await cookies()).get(USER_COOKIE)?.value;
   if (!id) throw new Error("Sin sesión");
   await ensureUser(id);
   return id;

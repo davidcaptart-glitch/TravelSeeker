@@ -10,7 +10,8 @@
     "setup": "tsx scripts/setup.ts",
     "worker": "tsx --env-file-if-exists=.env.local scripts/worker.ts",
     "airports": "tsx scripts/build-airports.ts",
-    "demo": "tsx --env-file-if-exists=.env.local scripts/demo.ts"
+    "demo": "tsx --env-file-if-exists=.env.local scripts/demo.ts",
+    "migrate": "tsx scripts/migrate-to-cloud.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

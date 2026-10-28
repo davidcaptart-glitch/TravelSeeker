@@ -24,6 +24,12 @@ function toAlert(r: AlertRow): Alert {
 
 export type User = { id: string; email: string | null; holidaysCountry: string; holidaysRegion: string | null };
 
+/** true si el usuario existe y tiene al menos una alerta (para vincular otro dispositivo). */
+export async function userHasAlerts(id: string): Promise<boolean> {
+  const [r] = await query<{ n: number }>("SELECT COUNT(*) AS n FROM alerts WHERE user_id = ?", [id]);
+  return Number(r?.n ?? 0) > 0;
+}
+
 export async function ensureUser(id: string): Promise<User> {
   await exec("INSERT OR IGNORE INTO users (id) VALUES (?)", [id]);
   const [u] = await query<{ id: string; email: string | null; holidays_country: string; holidays_region: string | null }>(
