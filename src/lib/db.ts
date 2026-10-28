@@ -1,8 +1,10 @@
 import { createClient, type Client, type InValue } from "@libsql/client";
 import { mkdirSync } from "node:fs";
 
-// SQLite local por defecto; en la nube basta con apuntar DATABASE_URL a Turso (libSQL).
-const url = process.env.DATABASE_URL ?? "file:data/travelseeker.db";
+// SQLite local por defecto; en la nube, Turso (libSQL): DATABASE_URL o las variables
+// TURSO_* que crea la integración de Turso en Vercel.
+const url = process.env.DATABASE_URL ?? process.env.TURSO_DATABASE_URL ?? "file:data/travelseeker.db";
+const authToken = process.env.DATABASE_AUTH_TOKEN ?? process.env.TURSO_AUTH_TOKEN;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -59,7 +61,7 @@ let ready: Promise<void> | null = null;
 function getClient(): Client {
   if (!client) {
     if (url.startsWith("file:")) mkdirSync("data", { recursive: true });
-    client = createClient({ url, authToken: process.env.DATABASE_AUTH_TOKEN });
+    client = createClient({ url, authToken });
     ready = client.executeMultiple(SCHEMA);
   }
   return client;
