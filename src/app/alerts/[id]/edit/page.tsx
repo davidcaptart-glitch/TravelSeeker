@@ -1,6 +1,8 @@
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import Loading from "@/app/loading";
-import { notFound } from "next/navigation";
 import { AlertForm } from "@/components/AlertForm";
 import { toISO } from "@/lib/dates";
 import { getAlert } from "@/lib/repo";
@@ -11,8 +13,10 @@ async function EditAlertContent({ params }: { params: Promise<{ id: string }> })
   const alert = await getAlert(id, await currentUserId());
   if (!alert) notFound();
   return (
-    <div className="space-y-5">
-      <h1 className="text-2xl font-semibold tracking-tight">Editar “{alert.config.name}”</h1>
+    <div className="mx-auto max-w-2xl space-y-5">
+      <Link href={`/alerts/${id}`} className="eyebrow inline-flex items-center gap-1 hover:text-foreground">
+        <ArrowLeft className="h-3.5 w-3.5" /> Editar «{alert.config.name}»
+      </Link>
       <AlertForm id={id} initial={alert.config} today={toISO(new Date())} />
     </div>
   );

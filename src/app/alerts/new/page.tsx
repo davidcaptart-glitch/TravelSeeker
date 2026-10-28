@@ -7,11 +7,8 @@ import { currentUserId } from "@/lib/session";
 async function NewAlertContent() {
   await currentUserId();
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Nueva alerta</h1>
-        <p className="text-sm text-muted">Dinos cuándo puedes, adónde y por cuánto. Nosotros vigilamos.</p>
-      </div>
+    <div className="mx-auto max-w-2xl space-y-5">
+      <h1 className="eyebrow">Nueva alerta</h1>
       <AlertForm today={toISO(new Date())} />
     </div>
   );

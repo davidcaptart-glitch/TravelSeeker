@@ -12,7 +12,7 @@ export function SettingsForm({ email, country, region }: { email: string; countr
           Email para avisos (opcional)
         </label>
         <input id="email" name="email" type="email" className="input" defaultValue={email} placeholder="tu@email.com" />
-        <p className="hint mt-1">Solo se usa si el servidor tiene configurado SMTP_URL.</p>
+        <p className="hint mt-1">Además del aviso en el móvil, cuando el envío de correos está activado en la app.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>

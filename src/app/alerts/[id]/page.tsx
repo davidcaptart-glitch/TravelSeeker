@@ -1,7 +1,8 @@
-import { Suspense } from "react";
-import Loading from "@/app/loading";
+import { AlertTriangle, ArrowLeft, Bed, ChevronDown, ExternalLink, MapPin, Plane, Radar, Star, TrainFront } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
+import Loading from "@/app/loading";
 import { AlertActions } from "@/components/AlertActions";
 import { GroundOptions } from "@/components/GroundOptions";
 import { formatDate } from "@/lib/dates";
@@ -10,9 +11,13 @@ import { getAlert, listMatches, markMatchesSeen } from "@/lib/repo";
 import { currentUserId } from "@/lib/session";
 import type { Match } from "@/lib/types";
 
-const HOTEL_TYPE = { hotel: "Hotel", apartment: "Apartamento", hostel: "Hostal/albergue" };
+const HOTEL_TYPE = {
+  hotel: "Hotel",
+  apartment: "Apartamento",
+  hostel: "Hostal/albergue",
+};
 
-function MatchCard({ m, notifyMode }: { m: Match; notifyMode: "flight" | "flight_hotel" }) {
+function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "flight_hotel"; best: boolean }) {
   const { flight, hotel, window, lastMile } = m.data;
   const pendingHotel = notifyMode === "flight_hotel" && m.kind === "flight";
   // Puerta a puerta: + ida y vuelta en el transporte más barato desde el aeropuerto.
@@ -20,9 +25,13 @@ function MatchCard({ m, notifyMode }: { m: Match; notifyMode: "flight" | "flight
   const pax = Math.max(1, Math.round((m.totalPrice - (hotel?.total ?? 0)) / flight.price));
   const doorToDoor = m.totalPrice + (Number.isFinite(cheapestGround) ? cheapestGround * 2 * pax : 0);
   return (
-    <article className={`card space-y-4 ${m.seen ? "" : "ring-2 ring-accent/40"}`}>
-      <header className="flex flex-wrap items-start justify-between gap-3">
+    <article className={`card overflow-hidden p-0 ${m.seen ? "" : "ring-2 ring-accent/50"}`}>
+      <header className="flex items-start justify-between gap-3 p-4 sm:p-5">
         <div>
+          <div className="mb-1 flex flex-wrap gap-1.5">
+            {!m.seen && <span className="badge bg-accent text-accent-ink">Nuevo</span>}
+            {best && <span className="badge bg-good-soft text-good">Mejor precio</span>}
+          </div>
           <p className="text-lg font-semibold">
             {formatDate(window.depart)} – {formatDate(window.ret)}
           </p>
@@ -31,75 +40,102 @@ function MatchCard({ m, notifyMode }: { m: Match; notifyMode: "flight" | "flight
             {window.workdaysUsed ? ` · gastas ${window.workdaysUsed} día(s) de vacaciones` : " · sin gastar vacaciones"}
           </p>
         </div>
-        <div className="text-right">
-          <p className="text-2xl font-semibold">{eur(m.totalPrice)}</p>
+        <div className="shrink-0 text-right">
+          <p className="text-2xl font-semibold text-accent tabular-nums">{eur(m.totalPrice)}</p>
           <p className="hint">{hotel ? "vuelo + alojamiento" : "solo vuelo"}</p>
           {doorToDoor > m.totalPrice && <p className="hint">~{eur(doorToDoor)} puerta a puerta</p>}
         </div>
       </header>
 
       {pendingHotel && (
-        <p className="rounded-xl bg-warn-soft px-3 py-2 text-sm text-warn">
-          El vuelo cumple, pero todavía no hay alojamiento que encaje: no se ha avisado.
+        <p className="mx-4 mb-3 flex items-start gap-2 rounded-2xl bg-warn-soft px-3 py-2 text-sm text-warn sm:mx-5">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          El vuelo cumple, pero aún no hay alojamiento que encaje: no te hemos avisado.
         </p>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <section className="rounded-xl bg-surface-2 p-4">
-          <h3 className="mb-1 text-sm font-semibold">✈️ Vuelo</h3>
-          <p className="text-sm">
-            {flight.origin} → {flight.destination} · <b>{eur(flight.price)}</b>/persona ida y vuelta
-          </p>
-          <p className="hint">
-            {flight.stops === 0 ? "Directo" : `${flight.stops} escala(s)`}
-            {flight.airline ? ` · ${flight.airline}` : ""}
-            {flight.departTime ? ` · sale ${flight.departTime}` : ""}
-            {flight.arriveTime ? ` · llega ${flight.arriveTime}` : ""}
-            {flight.durationMinutes ? ` · ${minutes(flight.durationMinutes)}` : ""}
-          </p>
-          <p className="hint mt-1">
-            Fuente: {flight.provider}
-            {flight.cached ? " (precio en caché, compruébalo)" : ""}
-          </p>
+      <div className="divide-y divide-border border-t border-border">
+        <section className="flex items-start gap-3 p-4 sm:px-5">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-surface-2 text-muted">
+            <Plane className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">
+              <span className="font-mono">{flight.origin}</span> → <span className="font-mono">{flight.destination}</span>
+              {flight.airline ? ` · ${flight.airline}` : ""}
+            </p>
+            <p className="hint">
+              {flight.stops === 0 ? "Directo" : `${flight.stops} escala(s)`}
+              {flight.departTime ? ` · sale ${flight.departTime}` : ""}
+              {flight.arriveTime ? ` · llega ${flight.arriveTime}` : ""}
+              {flight.durationMinutes ? ` · ${minutes(flight.durationMinutes)}` : ""}
+            </p>
+            <p className="hint">
+              {eur(flight.price)}/persona ida y vuelta · {flight.provider}
+              {flight.cached ? " (precio en caché, compruébalo)" : ""}
+            </p>
+          </div>
           {flight.link && (
-            <a href={flight.link} target="_blank" rel="noreferrer" className="btn-ghost mt-3 py-1.5">
-              Ver vuelo
+            <a href={flight.link} target="_blank" rel="noreferrer" className="btn-ghost min-h-10 shrink-0 px-3">
+              Ver <ExternalLink className="h-3.5 w-3.5" />
             </a>
           )}
         </section>
 
-        <section className="rounded-xl bg-surface-2 p-4">
-          <h3 className="mb-1 text-sm font-semibold">🏨 Alojamiento</h3>
+        <section className="flex items-start gap-3 p-4 sm:px-5">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-surface-2 text-muted">
+            <Bed className="h-5 w-5" />
+          </span>
           {hotel ? (
             <>
-              <p className="text-sm">
-                {hotel.name} · <b>{eur(hotel.total)}</b> total ({eur(hotel.pricePerNight)}/noche)
-              </p>
-              <p className="hint">
-                {HOTEL_TYPE[hotel.type]}
-                {hotel.stars ? ` · ${hotel.stars}★` : ""}
-                {hotel.rating ? ` · nota ${hotel.rating}` : ""} · {hotel.provider}
-              </p>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{hotel.name}</p>
+                <p className="hint flex flex-wrap items-center gap-x-1">
+                  {HOTEL_TYPE[hotel.type]}
+                  {hotel.stars ? ` · ${hotel.stars}★` : ""}
+                  {hotel.rating ? (
+                    <>
+                      {" · "}
+                      <Star className="h-3 w-3 fill-current text-warn" /> {hotel.rating}
+                    </>
+                  ) : null}
+                </p>
+                <p className="hint">
+                  {eur(hotel.total)} en total ({eur(hotel.pricePerNight)}/noche) · {hotel.provider}
+                </p>
+              </div>
               {hotel.link && (
-                <a href={hotel.link} target="_blank" rel="noreferrer" className="btn-ghost mt-3 py-1.5">
-                  Ver alojamiento
+                <a href={hotel.link} target="_blank" rel="noreferrer" className="btn-ghost min-h-10 shrink-0 px-3">
+                  Ver <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               )}
             </>
           ) : (
-            <p className="hint">Sin alojamiento que cumpla (o la alerta no lo pide).</p>
+            <p className="hint self-center">Sin alojamiento que cumpla (o la alerta no lo pide).</p>
           )}
         </section>
-      </div>
 
-      {lastMile && (
-        <section>
-          <h3 className="mb-2 text-sm font-semibold">
-            🚏 {lastMile.from.label} → {lastMile.to.label}
-          </h3>
-          <GroundOptions options={lastMile.options} />
-        </section>
-      )}
+        {lastMile && (
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-3 p-4 sm:px-5">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-surface-2 text-muted">
+                <MapPin className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">Del aeropuerto al destino</span>
+                <span className="hint block truncate">
+                  {lastMile.from.label} → {lastMile.to.label}
+                  {Number.isFinite(cheapestGround) ? ` · desde ~${eur(cheapestGround)}` : ""}
+                </span>
+              </span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted transition group-open:rotate-180" />
+            </summary>
+            <div className="px-4 pb-4 sm:px-5">
+              <GroundOptions options={lastMile.options} />
+            </div>
+          </details>
+        )}
+      </div>
     </article>
   );
 }
@@ -113,61 +149,110 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
   const c = alert.config;
   const s = alert.lastSummary;
   const visible = matches.slice(0, 12);
+  const bestPrice = matches.length ? Math.min(...matches.map((m) => m.totalPrice)) : null;
+  const bestId = matches.find((m) => m.totalPrice === bestPrice)?.id;
   // Se marcan como vistos al abrir la alerta (se muestran resaltados solo esta vez).
   if (matches.some((m) => !m.seen)) await markMatchesSeen(id);
 
+  const facts = [
+    ["Aviso", c.notifyMode === "flight" ? "Con el vuelo" : "Vuelo + alojamiento"],
+    ["Vuelo", `≤ ${eur(c.flight.maxPrice)} · ${STOPS_LABEL[c.flight.maxStops]} · ${c.flight.passengers} pers.`],
+    ["Fechas", `${c.dates.months.map(monthLabel).join(", ")} · ${c.dates.minNights}-${c.dates.maxNights} noches`],
+    [
+      "Alojamiento",
+      c.hotel
+        ? `${c.hotel.types.map((t) => HOTEL_TYPE[t]).join(", ")}${c.hotel.maxPricePerNight ? ` ≤ ${eur(c.hotel.maxPricePerNight)}/noche` : ""}`
+        : "No",
+    ],
+  ];
+
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/" className="hint hover:underline">
-          ← Alertas
-        </Link>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{c.name}</h1>
-        <p className="text-sm text-muted">
-          {c.origins.join(" / ")} →{" "}
-          {c.destination.kind === "place" ? c.destination.place.label : "cualquier sitio"}
-          {c.destinationAirports.length ? ` (${c.destinationAirports.join(", ")})` : ""}
-        </p>
-      </div>
+    <div className="space-y-5">
+      <Link href="/" className="eyebrow inline-flex items-center gap-1 hover:text-foreground">
+        <ArrowLeft className="h-3.5 w-3.5" /> Alertas
+      </Link>
+
+      <section className="animate-rise rounded-3xl bg-gradient-to-br from-ink to-ink-2 p-5 text-white sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-xs font-medium text-white/70">
+              <span className={`h-2 w-2 rounded-full ${alert.active ? "bg-good" : "bg-white/40"}`} />
+              {alert.active ? `Buscando cada ${c.checkEveryHours} h` : "Pausada"} · {ago(alert.lastRunAt)}
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-balance">{c.name}</h1>
+            <p className="mt-1 text-sm text-white/75">
+              <span className="font-mono">{c.origins.join(" · ")}</span> →{" "}
+              {c.destination.kind === "place" ? c.destination.place.label.split(",").slice(0, 2).join(",") : "cualquier sitio"}
+              {c.destinationAirports.length ? ` (${c.destinationAirports.join(", ")})` : ""}
+            </p>
+          </div>
+          {bestPrice !== null && (
+            <div className="shrink-0 text-right">
+              <p className="text-xs text-white/65">desde</p>
+              <p className="text-2xl font-semibold tabular-nums">{eur(bestPrice)}</p>
+            </div>
+          )}
+        </div>
+        <dl className="mt-4 grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+          {facts.map(([k, v]) => (
+            <div key={k} className="rounded-2xl bg-white/10 px-3 py-2">
+              <dt className="text-xs text-white/60">{k}</dt>
+              <dd className="font-medium first-letter:uppercase">{v}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
 
       <AlertActions id={id} active={alert.active} />
 
-      <section className="card grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <p className="hint">Aviso</p>
-          <p>{c.notifyMode === "flight" ? "Cuando el vuelo cumpla" : "Cuando vuelo y alojamiento cumplan"}</p>
-        </div>
-        <div>
-          <p className="hint">Vuelo</p>
-          <p>
-            ≤ {eur(c.flight.maxPrice)}/pers · {STOPS_LABEL[c.flight.maxStops]} · {c.flight.passengers} pers.
-          </p>
-        </div>
-        <div>
-          <p className="hint">Fechas</p>
-          <p>
-            {c.dates.months.map(monthLabel).join(", ")} · {c.dates.weekendsOnly ? "findes y puentes" : "cualquier día"} ·{" "}
-            {c.dates.minNights}-{c.dates.maxNights} noches
-          </p>
-        </div>
-        <div>
-          <p className="hint">Alojamiento</p>
-          <p>
-            {c.hotel
-              ? `${c.hotel.types.map((t) => HOTEL_TYPE[t]).join(", ")}${c.hotel.maxPricePerNight ? ` ≤ ${eur(c.hotel.maxPricePerNight)}/noche` : ""}`
-              : "No"}
-          </p>
-        </div>
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">
+          Resultados{" "}
+          <span className="font-normal text-muted">
+            {matches.length > visible.length ? `(${visible.length} de ${matches.length})` : `(${matches.length})`}
+          </span>
+        </h2>
+        {visible.length ? (
+          visible.map((m) => <MatchCard key={m.id} m={m} notifyMode={c.notifyMode} best={m.id === bestId} />)
+        ) : (
+          <div className="card flex flex-col items-center gap-2 py-10 text-center">
+            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-accent-soft text-accent">
+              <Radar className="h-6 w-6" />
+            </span>
+            <p className="font-medium">Todavía nada cumple tus condiciones</p>
+            <p className="max-w-sm text-sm text-muted">Seguimos buscando y te avisaremos. Si tarda, prueba a subir el precio o añadir meses.</p>
+          </div>
+        )}
       </section>
 
-      {s && (
-        <section className="card text-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-semibold">Última búsqueda · {ago(s.at)}</h2>
-            <p className="hint">Se repite cada {c.checkEveryHours} h</p>
+      {s?.groundOnly && c.groundFrom && (
+        <section className="card space-y-3">
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-surface-2 text-muted">
+              <TrainFront className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="font-semibold">Sin avión desde {c.groundFrom.label.split(",")[0]}</h2>
+              <p className="hint">Horarios reales (de un día equivalente si la fecha es lejana). FlixBus con precio real; el resto, estimado.</p>
+            </div>
           </div>
+          <GroundOptions options={s.groundOnlyOptions ?? [s.groundOnly]} />
+        </section>
+      )}
+
+      {s && (
+        <details className="card group" open={!matches.length && s.notes.length > 0}>
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
+            <span>
+              <span className="block font-semibold">Cómo ha ido la última búsqueda</span>
+              <span className="hint">
+                {s.windows} fechas revisadas · {s.flightMatches} cumplen · {ago(s.at)}
+              </span>
+            </span>
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted transition group-open:rotate-180" />
+          </summary>
           {/* El embudo: de todas las fechas posibles a las ofertas que cumplen. */}
-          <ol className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <ol className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
             {[
               ["Fechas posibles", s.windows],
               ["Precios cribados", s.screened],
@@ -175,8 +260,8 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
               ["Confirmados en vivo", s.confirmed],
               ["Cumplen", s.flightMatches],
             ].map(([label, n]) => (
-              <li key={label} className="rounded-xl bg-surface-2 p-3">
-                <p className="text-xl font-semibold">{n}</p>
+              <li key={label} className="rounded-2xl bg-surface-2 p-3">
+                <p className="text-xl font-semibold tabular-nums">{n}</p>
                 <p className="hint">{label}</p>
               </li>
             ))}
@@ -188,31 +273,8 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
               ))}
             </ul>
           )}
-        </section>
+        </details>
       )}
-
-      {s?.groundOnly && c.groundFrom && (
-        <section className="card">
-          <h2 className="mb-1 font-semibold">🚆 Alternativa sin avión desde {c.groundFrom.label}</h2>
-          <p className="hint mb-3">
-            Horarios reales (de un día equivalente si la fecha es lejana). FlixBus con precio real del día; el resto, estimado.
-          </p>
-          <GroundOptions options={s.groundOnlyOptions ?? [s.groundOnly]} />
-        </section>
-      )}
-
-      <section className="space-y-4">
-        <h2 className="font-semibold">
-          Resultados {matches.length > visible.length ? `(${visible.length} de ${matches.length})` : `(${matches.length})`}
-        </h2>
-        {visible.length ? (
-          visible.map((m) => <MatchCard key={m.id} m={m} notifyMode={c.notifyMode} />)
-        ) : (
-          <p className="card text-sm text-muted">
-            Todavía nada cumple tus condiciones. Seguimos buscando y te avisaremos.
-          </p>
-        )}
-      </section>
     </div>
   );
 }
