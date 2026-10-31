@@ -265,6 +265,107 @@ function Money({
   );
 }
 
+const MONTH_NAMES = Array.from({ length: 12 }, (_, i) =>
+  new Date(Date.UTC(2000, i, 1)).toLocaleDateString("es-ES", { month: "short", timeZone: "UTC" }).replace(".", ""),
+);
+// Las aerolíneas suelen vender billetes con unos 11 meses de antelación.
+const ON_SALE_MONTHS = 11;
+
+/** Selector de meses por año: pestañas de año, sus 12 meses y "todo el año". */
+function MonthPicker({ today, value, onChange }: { today: string; value: string[]; onChange: (v: string[]) => void }) {
+  const thisYear = Number(today.slice(0, 4));
+  const thisMonth = today.slice(0, 7);
+  const years = [thisYear, thisYear + 1, thisYear + 2];
+  const [year, setYear] = useState(() => Number((value.find((m) => m >= thisMonth) ?? thisMonth).slice(0, 4)));
+  const months = MONTH_NAMES.map((_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
+  const open = months.filter((m) => m >= thisMonth);
+  const allOn = open.length > 0 && open.every((m) => value.includes(m));
+  const lastOnSale = nextMonths(today, ON_SALE_MONTHS + 1).at(-1)!;
+  const farAway = value.filter((m) => m > lastOnSale);
+  const toggle = (m: string) => onChange(value.includes(m) ? value.filter((x) => x !== m) : [...value, m].sort());
+
+  return (
+    <div className="space-y-3">
+      <div role="tablist" aria-label="Año" className="flex rounded-2xl bg-surface-2 p-1">
+        {years.map((y) => {
+          const n = value.filter((m) => m.startsWith(`${y}-`)).length;
+          return (
+            <button
+              key={y}
+              type="button"
+              role="tab"
+              aria-selected={year === y}
+              onClick={() => setYear(y)}
+              className={`flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl text-sm font-semibold tabular-nums transition ${year === y ? "bg-surface text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}
+            >
+              {y}
+              {n > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-[11px] text-accent-ink">{n}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-4 gap-2">
+        {months.map((m, i) => {
+          const on = value.includes(m);
+          const past = m < thisMonth;
+          return (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={on}
+              disabled={past}
+              className={`chip justify-center capitalize disabled:cursor-not-allowed disabled:opacity-35 ${on ? "chip-on" : ""}`}
+              onClick={() => toggle(m)}
+            >
+              {MONTH_NAMES[i]}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          className="text-sm font-medium text-accent disabled:opacity-40"
+          disabled={!open.length}
+          onClick={() => onChange(allOn ? value.filter((m) => !months.includes(m)) : [...new Set([...value, ...open])].sort())}
+        >
+          {allOn ? `Quitar todo ${year}` : `Todo ${year}`}
+        </button>
+        {value.length > 0 && (
+          <button type="button" className="text-sm text-muted hover:text-foreground" onClick={() => onChange([])}>
+            Borrar selección
+          </button>
+        )}
+      </div>
+
+      {value.length > 0 && (
+        <p className="text-sm">
+          <span className="text-muted">Elegidos: </span>
+          <span className="font-medium">
+            {years
+              .map((y) => {
+                const sel = value.filter((m) => m.startsWith(`${y}-`));
+                if (!sel.length) return "";
+                const open = MONTH_NAMES.map((_, i) => `${y}-${String(i + 1).padStart(2, "0")}`).filter((m) => m >= thisMonth);
+                return `${y}: ${open.every((m) => sel.includes(m)) ? "todo el año" : sel.map((m) => MONTH_NAMES[Number(m.slice(5)) - 1]).join(", ")}`;
+              })
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        </p>
+      )}
+      {farAway.length > 0 && (
+        <p className="rounded-2xl bg-surface-2 px-3 py-2 text-xs text-muted">
+          Los vuelos suelen ponerse a la venta unos {ON_SALE_MONTHS} meses antes. Para{" "}
+          <span className="capitalize">{farAway.map(monthLabel).join(", ")}</span> seguiremos buscando y te avisaremos cuando haya billetes.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function More({ children, label = "Más opciones" }: { children: React.ReactNode; label?: string }) {
   return (
     <details className="group">
@@ -522,27 +623,8 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
 
         {step === 1 && (
           <>
-            <Block title="Meses" hint="Toca los meses en los que podrías ir.">
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                {nextMonths(today, 12).map((m) => {
-                  const on = d.dates.months.includes(m);
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      aria-pressed={on}
-                      className={`chip justify-center capitalize ${on ? "chip-on" : ""}`}
-                      onClick={() =>
-                        setDates({
-                          months: on ? d.dates.months.filter((x) => x !== m) : [...d.dates.months, m].sort(),
-                        })
-                      }
-                    >
-                      {monthLabel(m)}
-                    </button>
-                  );
-                })}
-              </div>
+            <Block title="Meses" hint="Elige el año y toca los meses en los que podrías ir. Puedes mezclar meses de varios años.">
+              <MonthPicker today={today} value={d.dates.months} onChange={(months) => setDates({ months })} />
             </Block>
 
             <Block title="Tus días libres">
