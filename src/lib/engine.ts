@@ -1,4 +1,5 @@
 import { formatDate, generateWindows, monthsOf } from "./dates";
+import { minutes } from "./format";
 import { getAirport, haversineKm, nearbyAirports, THEMED_DESTINATIONS } from "./geo";
 import { getHolidays } from "./holidays";
 import { notifyUser } from "./notify";
@@ -204,7 +205,9 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
       const when = `${formatDate(flight.depart)} – ${formatDate(flight.ret)}`;
       const hotelTxt = data.hotel ? ` + ${data.hotel.name} ${Math.round(data.hotel.total)} €` : "";
       const title = `${change === "cheaper" ? "⬇️ Baja de precio" : "✈️ ¡Oferta!"} ${c.name}`;
-      const body = `${flight.origin}→${flight.destination} ${when}: vuelo ${flight.price} €/pers${hotelTxt}. Total ${Math.round(total)} €`;
+      const ground = data.lastMile?.options.reduce((a, b) => (b.cost < a.cost ? b : a), data.lastMile.options[0]);
+      const groundTxt = ground ? ` Del aeropuerto: ${ground.label} (${minutes(ground.minutes)}, ~${Math.round(ground.cost)} €).` : "";
+      const body = `${flight.origin}→${flight.destination} ${when}: vuelo ${flight.price} €/pers${hotelTxt}. Total ${Math.round(total)} €.${groundTxt}`;
       if ((await notifyUser(alert.userId, { title, body, path: `/alerts/${alert.id}` })) > 0) summary.notified++;
     }
   }

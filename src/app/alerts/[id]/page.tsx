@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import Loading from "@/app/loading";
 import { AlertActions } from "@/components/AlertActions";
-import { GroundOptions } from "@/components/GroundOptions";
+import { GroundOptions, pickGround } from "@/components/GroundOptions";
 import { formatDate } from "@/lib/dates";
 import { ago, eur, minutes, monthLabel, STOPS_LABEL } from "@/lib/format";
 import { getAlert, listMatches, markMatchesSeen } from "@/lib/repo";
@@ -17,13 +17,22 @@ const HOTEL_TYPE = {
   hostel: "Hostal/albergue",
 };
 
+function shortLabel(label: string) {
+  return label.split(",")[0];
+}
+
+function mapsDirections(from: string, to: string) {
+  return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(from)}&destination=${encodeURIComponent(to)}&travelmode=transit`;
+}
+
 function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "flight_hotel"; best: boolean }) {
   const { flight, hotel, window, lastMile } = m.data;
   const pendingHotel = notifyMode === "flight_hotel" && m.kind === "flight";
-  // Puerta a puerta: + ida y vuelta en el transporte más barato desde el aeropuerto.
-  const cheapestGround = Math.min(...(lastMile?.options.map((o) => o.cost) ?? [0]));
+  const destLabel = lastMile?.to.label ?? m.data.destinationLabel;
+  // Puerta a puerta: + ida y vuelta en el transporte más barato desde el aeropuerto (el taxi se paga por vehículo).
   const pax = Math.max(1, Math.round((m.totalPrice - (hotel?.total ?? 0)) / flight.price));
-  const doorToDoor = m.totalPrice + (Number.isFinite(cheapestGround) ? cheapestGround * 2 * pax : 0);
+  const { cheapest } = pickGround(lastMile?.options ?? []);
+  const groundRoundTrip = cheapest ? cheapest.cost * 2 * (cheapest.kind === "taxi" ? 1 : pax) : 0;
   return (
     <article className={`card overflow-hidden p-0 ${m.seen ? "" : "ring-2 ring-accent/50"}`}>
       <header className="flex items-start justify-between gap-3 p-4 sm:p-5">
@@ -43,7 +52,12 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
         <div className="shrink-0 text-right">
           <p className="text-2xl font-semibold text-accent tabular-nums">{eur(m.totalPrice)}</p>
           <p className="hint">{hotel ? "vuelo + alojamiento" : "solo vuelo"}</p>
-          {doorToDoor > m.totalPrice && <p className="hint">~{eur(doorToDoor)} puerta a puerta</p>}
+          {groundRoundTrip > 0 && (
+            <p className="mt-1 text-sm font-medium tabular-nums">
+              ~{eur(m.totalPrice + groundRoundTrip)}
+              <span className="hint block font-normal">con el trayecto ida y vuelta (+{eur(groundRoundTrip)})</span>
+            </p>
+          )}
         </div>
       </header>
 
@@ -82,6 +96,36 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
           )}
         </section>
 
+        <section className="space-y-3 p-4 sm:px-5">
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-surface-2 text-muted">
+              <MapPin className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Cómo llegar a {shortLabel(destLabel)}</p>
+              <p className="hint">
+                Desde el aeropuerto {flight.destination}
+                {flight.arriveTime ? `, aterrizando a las ${flight.arriveTime}` : ""}. Precio de un trayecto (el taxi, por vehículo).
+              </p>
+            </div>
+          </div>
+          {lastMile?.options.length ? (
+            <GroundOptions options={lastMile.options} />
+          ) : (
+            <p className="rounded-2xl bg-surface-2 px-3 py-2 text-sm text-muted">
+              No hemos podido calcular el trayecto.{" "}
+              <a
+                className="font-medium text-accent"
+                href={mapsDirections(`Aeropuerto ${flight.destination}`, destLabel)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ver cómo ir en Google Maps
+              </a>
+            </p>
+          )}
+        </section>
+
         <section className="flex items-start gap-3 p-4 sm:px-5">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-surface-2 text-muted">
             <Bed className="h-5 w-5" />
@@ -114,27 +158,6 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
             <p className="hint self-center">Sin alojamiento que cumpla (o la alerta no lo pide).</p>
           )}
         </section>
-
-        {lastMile && (
-          <details className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-3 p-4 sm:px-5">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-surface-2 text-muted">
-                <MapPin className="h-5 w-5" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">Del aeropuerto al destino</span>
-                <span className="hint block truncate">
-                  {lastMile.from.label} → {lastMile.to.label}
-                  {Number.isFinite(cheapestGround) ? ` · desde ~${eur(cheapestGround)}` : ""}
-                </span>
-              </span>
-              <ChevronDown className="h-4 w-4 shrink-0 text-muted transition group-open:rotate-180" />
-            </summary>
-            <div className="px-4 pb-4 sm:px-5">
-              <GroundOptions options={lastMile.options} />
-            </div>
-          </details>
-        )}
       </div>
     </article>
   );
