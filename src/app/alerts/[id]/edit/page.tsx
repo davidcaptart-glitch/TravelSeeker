@@ -14,7 +14,7 @@ async function EditAlertContent({ params }: { params: Promise<{ id: string }> })
   if (!alert) notFound();
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <Link href={`/alerts/${id}`} className="eyebrow inline-flex items-center gap-1 hover:text-foreground">
+      <Link href={`/alerts/${id}`} className="eyebrow-pill transition hover:text-foreground">
         <ArrowLeft className="h-3.5 w-3.5" /> Editar «{alert.config.name}»
       </Link>
       <AlertForm id={id} initial={alert.config} today={toISO(new Date())} />

@@ -8,7 +8,7 @@ async function NewAlertContent() {
   await currentUserId();
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <h1 className="eyebrow">Nueva alerta</h1>
+      <h1 className="eyebrow-pill">Nueva alerta</h1>
       <AlertForm today={toISO(new Date())} />
     </div>
   );

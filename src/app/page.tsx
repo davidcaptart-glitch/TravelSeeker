@@ -35,16 +35,21 @@ async function HomeContent() {
   if (alerts.length === 0) {
     return (
       <div className="space-y-6">
-        <section className="animate-rise overflow-hidden rounded-3xl bg-gradient-to-br from-ink to-ink-2 p-6 text-white sm:p-8">
-          <span className="badge bg-white/15 text-white">
-            <Sparkles className="h-3.5 w-3.5" /> Gratis y sin parar
+        <section className="animate-rise overflow-hidden hero p-6 sm:p-8">
+          <span className="glass-tile inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold tracking-[0.18em] text-white/85 uppercase">
+            <Sparkles className="h-3 w-3" /> Gratis y sin parar
           </span>
-          <h1 className="mt-4 max-w-md text-3xl font-semibold tracking-tight text-balance">Viaja en tus días libres por lo que quieres pagar</h1>
-          <p className="mt-2 max-w-md text-white/75">
+          <h1 className="mt-5 max-w-md text-[2rem] leading-[1.1] font-semibold tracking-tight text-balance">
+            Viaja en tus días libres por lo que quieres pagar
+          </h1>
+          <p className="mt-3 max-w-md text-white/70">
             Dinos cuándo puedes, adónde y tu presupuesto. Buscamos vuelos, alojamiento y trenes por ti y te avisamos al móvil.
           </p>
-          <Link href="/alerts/new" className="btn-primary mt-6">
-            <Plus className="h-4 w-4" /> Crear mi primera alerta
+          <Link href="/alerts/new" className="btn-primary group mt-7 min-h-12 pl-6">
+            Crear mi primera alerta
+            <span className="btn-icon">
+              <ArrowRight className="h-4 w-4" />
+            </span>
           </Link>
         </section>
         <section>
@@ -72,9 +77,11 @@ async function HomeContent() {
 
   return (
     <div className="space-y-6">
-      <section className="animate-rise rounded-3xl bg-gradient-to-br from-ink to-ink-2 p-5 text-white sm:p-6">
-        <p className="text-sm text-white/70">Vigilando tus días libres</p>
-        <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">
+      <section className="animate-rise hero p-5 sm:p-6">
+        <span className="glass-tile inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold tracking-[0.18em] text-white/85 uppercase">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#5fd497]" /> Vigilando tus días libres
+        </span>
+        <h1 className="mt-3 text-[1.75rem] leading-tight font-semibold tracking-tight">
           {unseen > 0 ? `${unseen} ${unseen === 1 ? "novedad" : "novedades"} para ti` : "Tus alertas de viaje"}
         </h1>
         <dl className="mt-5 grid grid-cols-3 gap-2">
@@ -83,7 +90,7 @@ async function HomeContent() {
             ["Novedades", String(unseen)],
             ["Desde", cheapest === null ? "—" : eur(cheapest)],
           ].map(([k, v]) => (
-            <div key={k} className="rounded-2xl bg-white/10 px-3 py-2.5">
+            <div key={k} className="glass-tile px-3 py-2.5">
               <dt className="text-xs text-white/65">{k}</dt>
               <dd className="text-lg font-semibold tabular-nums">{v}</dd>
             </div>
@@ -101,13 +108,13 @@ async function HomeContent() {
           </Link>
         </div>
         <ul className="grid gap-3 sm:grid-cols-2">
-          {alerts.map((a) => {
+          {alerts.map((a, i) => {
             const ms = matchesByAlert.get(a.id) ?? [];
             const best = ms.length ? Math.min(...ms.map((m) => m.totalPrice)) : null;
             const fresh = ms.filter((m) => !m.seen).length;
             const c = a.config;
             return (
-              <li key={a.id}>
+              <li key={a.id} className="animate-rise" style={{ animationDelay: `${120 + i * 70}ms` }}>
                 <Link href={`/alerts/${a.id}`} className="card group flex h-full flex-col gap-4 p-4 transition hover:-translate-y-0.5 sm:p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">

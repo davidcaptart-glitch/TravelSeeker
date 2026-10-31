@@ -55,7 +55,7 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
           {groundRoundTrip > 0 && (
             <p className="mt-1 text-sm font-medium tabular-nums">
               ~{eur(m.totalPrice + groundRoundTrip)}
-              <span className="hint block font-normal">con el trayecto ida y vuelta (+{eur(groundRoundTrip)})</span>
+              <span className="hint block font-normal">con traslados (+{eur(groundRoundTrip)})</span>
             </p>
           )}
         </div>
@@ -191,11 +191,11 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <div className="space-y-5">
-      <Link href="/" className="eyebrow inline-flex items-center gap-1 hover:text-foreground">
+      <Link href="/" className="eyebrow-pill transition hover:text-foreground">
         <ArrowLeft className="h-3.5 w-3.5" /> Alertas
       </Link>
 
-      <section className="animate-rise rounded-3xl bg-gradient-to-br from-ink to-ink-2 p-5 text-white sm:p-6">
+      <section className="animate-rise hero p-5 sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="flex items-center gap-2 text-xs font-medium text-white/70">
@@ -218,7 +218,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
           {facts.map(([k, v]) => (
-            <div key={k} className="rounded-2xl bg-white/10 px-3 py-2">
+            <div key={k} className="glass-tile px-3 py-2">
               <dt className="text-xs text-white/60">{k}</dt>
               <dd className="font-medium first-letter:uppercase">{v}</dd>
             </div>
@@ -236,7 +236,11 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
           </span>
         </h2>
         {visible.length ? (
-          visible.map((m) => <MatchCard key={m.id} m={m} notifyMode={c.notifyMode} best={m.id === bestId} />)
+          visible.map((m, i) => (
+            <div key={m.id} className="animate-rise" style={{ animationDelay: `${150 + Math.min(i, 6) * 70}ms` }}>
+              <MatchCard m={m} notifyMode={c.notifyMode} best={m.id === bestId} />
+            </div>
+          ))
         ) : (
           <div className="card flex flex-col items-center gap-2 py-10 text-center">
             <span className="grid h-12 w-12 place-items-center rounded-2xl bg-accent-soft text-accent">

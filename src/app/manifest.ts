@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Te avisa cuando aparece un viaje que encaja con tus días libres y tu presupuesto.",
     start_url: "/",
     display: "standalone",
-    background_color: "#f7f5f2",
+    background_color: "#f3f1ec",
     theme_color: "#162040",
     lang: "es",
     icons: [

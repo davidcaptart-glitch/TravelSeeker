@@ -29,7 +29,7 @@ const TABS = [
 export function Logo() {
   return (
     <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
-      <span className="grid h-9 w-9 place-items-center rounded-xl bg-ink text-white shadow-sm">
+      <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-ink to-ink-2 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.15)]">
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
           <path d="M3 17c4-1 7-4 9-8" strokeLinecap="round" />
           <path d="M12 9l2.5-4.5L21 3l-1.5 6.5L15 12" strokeLinejoin="round" />
@@ -44,19 +44,25 @@ export function Logo() {
 /** Enlaces de la cabecera (pantallas medianas y grandes). */
 function TopNavView({ path }: { path: string }) {
   return (
-    <nav className="hidden items-center gap-1 text-sm md:flex">
+    <nav
+      className="hidden items-center gap-1 rounded-full bg-surface/70 p-1 text-sm backdrop-blur-xl md:flex"
+      style={{ boxShadow: "inset 0 1px 0 var(--highlight), 0 0 0 1px var(--hairline)" }}
+    >
       {TABS.filter((t) => t.href !== "/alerts/new").map((t) => (
         <Link
           key={t.href}
           href={t.href}
           aria-current={t.match(path) ? "page" : undefined}
-          className="rounded-xl px-3 py-2 font-medium text-muted transition hover:bg-surface-2 hover:text-foreground aria-[current=page]:text-foreground"
+          className="rounded-full px-4 py-2 font-medium text-muted transition hover:text-foreground aria-[current=page]:bg-foreground/[0.07] aria-[current=page]:text-foreground"
         >
           {t.label}
         </Link>
       ))}
-      <Link href="/alerts/new" className="btn-primary ml-2 min-h-10">
-        <Plus className="h-4 w-4" /> Nueva alerta
+      <Link href="/alerts/new" className="btn-primary group ml-1 min-h-9">
+        Nueva alerta
+        <span className="btn-icon h-7 w-7">
+          <Plus className="h-4 w-4" />
+        </span>
       </Link>
     </nav>
   );
@@ -65,32 +71,32 @@ function TopNavView({ path }: { path: string }) {
 /** Barra inferior tipo app (móvil). */
 function BottomNavView({ path }: { path: string }) {
   return (
-    <nav
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 backdrop-blur md:hidden"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-    >
-      <ul className="mx-auto grid max-w-md grid-cols-3">
+    // Isla flotante de cristal, separada de los bordes de la pantalla.
+    <nav className="fixed inset-x-0 z-30 px-4 md:hidden" style={{ bottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
+      <ul
+        className="mx-auto grid max-w-sm grid-cols-3 items-center rounded-full bg-surface/75 p-1.5 backdrop-blur-xl"
+        style={{ boxShadow: "inset 0 1px 0 var(--highlight), 0 0 0 1px var(--hairline), 0 20px 40px -16px rgb(0 0 0 / 0.35)" }}
+      >
         {TABS.map((t) => {
           const on = t.match(path);
           const Icon = t.icon;
           const isNew = t.href === "/alerts/new";
           return (
-            <li key={t.href}>
+            <li key={t.href} className="flex justify-center">
               <Link
                 href={t.href}
                 aria-current={on ? "page" : undefined}
-                className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium transition ${on ? "text-accent" : "text-muted"}`}
+                aria-label={t.label}
+                className={`flex h-12 items-center justify-center gap-1.5 rounded-full text-xs font-semibold transition active:scale-95 ${
+                  isNew
+                    ? "w-full bg-accent text-accent-ink shadow-[inset_0_1px_0_rgb(255_255_255/0.25)]"
+                    : on
+                      ? "w-full bg-foreground/[0.07] text-foreground"
+                      : "w-full text-muted"
+                }`}
               >
-                {isNew ? (
-                  <span className="-mt-5 grid h-12 w-12 place-items-center rounded-2xl bg-accent text-accent-ink shadow-lg ring-4 ring-background">
-                    <Icon className="h-6 w-6" strokeWidth={2.5} />
-                  </span>
-                ) : (
-                  <span className={`grid h-8 w-14 place-items-center rounded-full transition ${on ? "bg-accent-soft" : ""}`}>
-                    <Icon className="h-5 w-5" />
-                  </span>
-                )}
-                {t.label}
+                <Icon className="h-5 w-5" strokeWidth={isNew ? 2.2 : undefined} />
+                {(on || isNew) && <span>{t.label}</span>}
               </Link>
             </li>
           );

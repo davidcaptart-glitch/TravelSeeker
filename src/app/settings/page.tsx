@@ -39,9 +39,16 @@ async function SettingsContent() {
   const serp = await usage("serpapi");
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Ajustes</h1>
+      <div>
+        <span className="eyebrow-pill">Tu cuenta</span>
+        <h1 className="mt-3 text-[1.75rem] leading-tight font-semibold tracking-tight">Ajustes</h1>
+      </div>
 
-      <Section icon={Bell} title="Notificaciones" hint="Para recibir avisos con la app cerrada. En el móvil, instálala primero (menú ⋮ → Instalar aplicación).">
+      <Section
+        icon={Bell}
+        title="Notificaciones"
+        hint="Para recibir avisos con la app cerrada. En el móvil, instálala primero (menú ⋮ → Instalar aplicación)."
+      >
         <PushManager />
       </Section>
 

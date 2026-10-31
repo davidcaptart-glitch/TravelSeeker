@@ -999,7 +999,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
       )}
 
       {/* Barra de acciones: siempre a mano con el pulgar, por encima de la barra de navegación. */}
-      <div className="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-10 md:bottom-4">
+      <div className="sticky bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-10 md:bottom-4">
         <div className="card flex items-center gap-2 p-2">
           {step > 0 && (
             <button type="button" className="btn-quiet" onClick={() => go(step - 1)} aria-label="Atrás">
@@ -1016,22 +1016,16 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
           {/* Claves distintas: si React reutilizara el mismo <button>, el clic en «Siguiente»
               acabaría enviando el formulario al convertirse en «Crear» durante ese mismo clic. */}
           {isLast ? (
-            <button key="submit" type="submit" className="btn-primary" disabled={!ready || pending}>
-              {pending ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Buscando…
-                </>
-              ) : id ? (
-                "Guardar cambios"
-              ) : (
-                <>
-                  <Check className="h-4 w-4" /> Crear y buscar
-                </>
-              )}
+            <button key="submit" type="submit" className="btn-primary group" disabled={!ready || pending}>
+              {pending ? "Buscando…" : id ? "Guardar cambios" : "Crear y buscar"}
+              <span className="btn-icon">{pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}</span>
             </button>
           ) : (
-            <button key="next" type="button" className="btn-primary" disabled={!stepOk[step]} onClick={() => go(step + 1)}>
-              Siguiente <ArrowRight className="h-4 w-4" />
+            <button key="next" type="button" className="btn-primary group" disabled={!stepOk[step]} onClick={() => go(step + 1)}>
+              Siguiente
+              <span className="btn-icon">
+                <ArrowRight className="h-4 w-4" />
+              </span>
             </button>
           )}
         </div>

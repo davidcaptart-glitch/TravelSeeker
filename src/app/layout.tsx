@@ -22,8 +22,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f7f5f2" },
-    { media: "(prefers-color-scheme: dark)", color: "#0d1018" },
+    { media: "(prefers-color-scheme: light)", color: "#f3f1ec" },
+    { media: "(prefers-color-scheme: dark)", color: "#07090f" },
   ],
   viewportFit: "cover",
 };
@@ -32,13 +32,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="es" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col font-sans">
-        <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur-md" style={{ paddingTop: "env(safe-area-inset-top)" }}>
-          <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
+        <header className="z-20 md:sticky md:top-3" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+          <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
             <Logo />
             <TopNav />
           </div>
         </header>
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-5 pb-28 md:pb-12">{children}</main>
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-3 pb-32 md:pt-6 md:pb-16">{children}</main>
         <BottomNav />
         <ServiceWorker />
       </body>
