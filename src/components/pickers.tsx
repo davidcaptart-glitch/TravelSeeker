@@ -61,7 +61,11 @@ function SearchInput({ value, onChange, placeholder }: { value: string; onChange
   );
 }
 
-const LIST = "absolute z-20 mt-1.5 max-h-72 w-full overflow-auto rounded-2xl border border-border bg-surface p-1 shadow-xl";
+function inhabitants(n: number) {
+  return n >= 1e6 ? `${(n / 1e6).toLocaleString("es-ES", { maximumFractionDigits: 1 })} M hab.` : `${Math.round(n / 1000)} mil hab.`;
+}
+
+const LIST ="absolute z-20 mt-1.5 max-h-72 w-full overflow-auto rounded-2xl border border-border bg-surface p-1 shadow-xl";
 const ITEM = "w-full rounded-xl px-3 py-2.5 text-left text-sm hover:bg-surface-2";
 
 export function AirportMultiPicker({
@@ -124,7 +128,7 @@ export function PlacePicker({
   placeholder?: string;
 }) {
   const [q, setQ] = useState("");
-  const hits = useSearch<Place & { kind?: string }>((s) => `/api/places?q=${encodeURIComponent(s)}`, q, 3);
+  const hits = useSearch<Place & { kind?: string; population?: number }>((s) => `/api/places?q=${encodeURIComponent(s)}`, q, 3);
   if (value) {
     return (
       <div className="flex min-h-11 items-center justify-between gap-2 rounded-2xl border border-accent bg-accent-soft px-3.5 py-2 text-sm">
@@ -160,8 +164,17 @@ export function PlacePicker({
                     setQ("");
                   }}
                 >
-                  <MapPin className="h-4 w-4 shrink-0 text-muted" />
-                  {p.label}
+                  <MapPin className={`h-4 w-4 shrink-0 ${p.kind === "Ciudad" ? "text-accent" : "text-muted"}`} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{p.label.split(", ")[0]}</span>
+                    <span className="hint block truncate">{p.label.split(", ").slice(1).reverse().join(" · ")}</span>
+                  </span>
+                  {p.kind && (
+                    <span className={`badge shrink-0 ${p.kind === "Ciudad" ? "bg-accent-soft text-accent" : "bg-surface-2 text-muted"}`}>
+                      {p.kind}
+                      {p.population && p.population >= 1000 ? ` · ${inhabitants(p.population)}` : ""}
+                    </span>
+                  )}
                 </button>
               </li>
             ))}

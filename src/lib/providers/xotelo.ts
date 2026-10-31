@@ -13,6 +13,30 @@ const UA = { "User-Agent": "TravelSeeker/0.1 (alertas de viaje personales)" };
 // Ciudades cuyo elemento de Wikidata no tiene el código de TripAdvisor.
 const KNOWN_GEOS: { lat: number; lon: number; geo: string }[] = [
   { lat: 50.0614, lon: 19.9372, geo: "g274772" }, // Cracovia
+  // Grandes destinos (comprobados con Xotelo). Estambul, por ejemplo, no tiene el código en Wikidata.
+  { lat: 41.0082, lon: 28.9784, geo: "g293974" }, // Estambul
+  { lat: 48.8566, lon: 2.3522, geo: "g187147" }, // París
+  { lat: 51.5074, lon: -0.1278, geo: "g186338" }, // Londres
+  { lat: 41.9028, lon: 12.4964, geo: "g187791" }, // Roma
+  { lat: 38.7223, lon: -9.1393, geo: "g189158" }, // Lisboa
+  { lat: 41.3874, lon: 2.1686, geo: "g187497" }, // Barcelona
+  { lat: 40.4168, lon: -3.7038, geo: "g187514" }, // Madrid
+  { lat: 52.3676, lon: 4.9041, geo: "g188590" }, // Ámsterdam
+  { lat: 52.52, lon: 13.405, geo: "g187323" }, // Berlín
+  { lat: 50.0755, lon: 14.4378, geo: "g274707" }, // Praga
+  { lat: 47.4979, lon: 19.0402, geo: "g274887" }, // Budapest
+  { lat: 48.2082, lon: 16.3738, geo: "g190454" }, // Viena
+  { lat: 37.9838, lon: 23.7275, geo: "g189400" }, // Atenas
+  { lat: 53.3498, lon: -6.2603, geo: "g186605" }, // Dublín
+  { lat: 45.4642, lon: 9.19, geo: "g187849" }, // Milán
+  { lat: 45.4408, lon: 12.3155, geo: "g187870" }, // Venecia
+  { lat: 43.7696, lon: 11.2558, geo: "g187895" }, // Florencia
+  { lat: 41.1579, lon: -8.6291, geo: "g189180" }, // Oporto
+  { lat: 50.8503, lon: 4.3517, geo: "g188644" }, // Bruselas
+  { lat: 55.6761, lon: 12.5683, geo: "g189541" }, // Copenhague
+  { lat: 55.9533, lon: -3.1883, geo: "g186525" }, // Edimburgo
+  { lat: 31.6295, lon: -7.9811, geo: "g293734" }, // Marrakech
+  { lat: 40.7128, lon: -74.006, geo: "g60763" }, // Nueva York
 ];
 
 // Opcional: TripAdvisor Content API (plan gratuito con cupo mensual), solo para buscar el código de ciudad.

@@ -61,8 +61,66 @@ type PhotonFeature = {
 
 const UA = { "User-Agent": "TravelSeeker/0.1 (alertas de viaje)" };
 
-// Geocodificación gratuita con Photon (OpenStreetMap).
-export async function searchPlaces(q: string, limit = 6) {
+export type PlaceHit = {
+  label: string;
+  lat: number;
+  lon: number;
+  country?: string;
+  // Para elegir bien en la lista: "Ciudad · 15,7 M hab.", "Calle"…
+  kind: string;
+  population?: number;
+};
+
+const PHOTON_KIND: Record<string, string> = {
+  city: "Ciudad",
+  town: "Pueblo",
+  village: "Pueblo",
+  hamlet: "Aldea",
+  locality: "Localidad",
+  suburb: "Barrio",
+  neighbourhood: "Barrio",
+  quarter: "Barrio",
+  province: "Provincia",
+  state: "Región",
+  county: "Comarca",
+  island: "Isla",
+  hotel: "Hotel",
+  station: "Estación",
+  aerodrome: "Aeropuerto",
+};
+const STREETS = ["residential", "living_street", "primary", "secondary", "tertiary", "unclassified", "service", "pedestrian", "footway", "track"];
+
+type GeoNamesHit = {
+  name: string;
+  latitude: number;
+  longitude: number;
+  country_code?: string;
+  country?: string;
+  admin1?: string;
+  feature_code?: string;
+  population?: number;
+};
+
+// Ciudades por su nombre en español (GeoNames vía Open-Meteo, gratis y sin clave): "Estambul", "Cracovia", "Londres"…
+async function searchCities(q: string, limit: number): Promise<PlaceHit[]> {
+  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=${limit}&language=es&format=json`;
+  const res = await fetch(url, { headers: UA });
+  if (!res.ok) return [];
+  const json = (await res.json()) as { results?: GeoNamesHit[] };
+  return (json.results ?? [])
+    .filter((r) => r.feature_code !== "AIRP")
+    .map((r) => ({
+      label: [r.name, r.admin1 !== r.name ? r.admin1 : undefined, r.country].filter(Boolean).join(", "),
+      lat: r.latitude,
+      lon: r.longitude,
+      country: r.country_code?.toUpperCase(),
+      kind: r.feature_code?.startsWith("PPL") ? ((r.population ?? 0) >= 50000 ? "Ciudad" : "Pueblo") : "Lugar",
+      population: r.population || undefined,
+    }));
+}
+
+// Direcciones, hoteles, barrios… con Photon (OpenStreetMap).
+async function searchPhoton(q: string, limit: number): Promise<PlaceHit[]> {
   const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=${limit}&lang=default`;
   const res = await fetch(url, { headers: UA });
   if (!res.ok) return [];
@@ -70,14 +128,26 @@ export async function searchPlaces(q: string, limit = 6) {
   return json.features.map((f) => {
     const p = f.properties;
     const parts = [p.name, p.city !== p.name ? p.city : undefined, p.state, p.country].filter(Boolean);
+    const v = p.osm_value ?? "";
     return {
       label: parts.join(", "),
       lat: f.geometry.coordinates[1],
       lon: f.geometry.coordinates[0],
       country: p.countrycode?.toUpperCase(),
-      kind: p.osm_value,
+      kind: PHOTON_KIND[v] ?? (STREETS.includes(v) ? "Calle" : "Lugar"),
     };
   });
+}
+
+// Geocodificación gratuita: primero las ciudades (de más a menos habitantes) y después el resto de lugares, sin repetidos.
+export async function searchPlaces(q: string, limit = 7): Promise<PlaceHit[]> {
+  const [cities, places] = await Promise.all([searchCities(q, 5).catch(() => []), searchPhoton(q, 6).catch(() => [])]);
+  const out: PlaceHit[] = [];
+  for (const p of [...cities.sort((a, b) => (b.population ?? 0) - (a.population ?? 0)), ...places]) {
+    const dup = out.some((o) => o.label === p.label || (o.kind === p.kind && haversineKm(o.lat, o.lon, p.lat, p.lon) < 3));
+    if (!dup) out.push(p);
+  }
+  return out.slice(0, limit);
 }
 
 // Estación de tren más cercana a un punto (para montar rutas combinadas).
