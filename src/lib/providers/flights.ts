@@ -2,7 +2,7 @@ import { cached, peekCache } from "../db";
 import { getAirport, haversineKm } from "../geo";
 import { take } from "../quota";
 import type { FlightOffer } from "../types";
-import { hash, timeBucket } from "./mock";
+import { ALLOW_MOCK, hash, timeBucket } from "./mock";
 
 import { ryanairFares, ryanairWindows } from "./ryanair";
 
@@ -17,9 +17,10 @@ import { ryanairFares, ryanairWindows } from "./ryanair";
 const TP_TOKEN = process.env.TRAVELPAYOUTS_TOKEN;
 const SERPAPI_KEY = process.env.SERPAPI_KEY;
 
+// "ryanair": sin claves y sin datos simulados, solo hay precios reales de Ryanair.
 export const flightProviders = {
-  screen: TP_TOKEN ? "travelpayouts" : SERPAPI_KEY ? "none" : "mock",
-  confirm: SERPAPI_KEY ? "serpapi" : TP_TOKEN ? "cached" : "mock",
+  screen: TP_TOKEN ? "travelpayouts" : SERPAPI_KEY ? "none" : ALLOW_MOCK ? "mock" : "ryanair",
+  confirm: SERPAPI_KEY ? "serpapi" : TP_TOKEN ? "cached" : ALLOW_MOCK ? "mock" : "ryanair",
 } as const;
 
 type TPItem = {
@@ -120,6 +121,7 @@ export async function screen(
   if (flightProviders.screen === "travelpayouts") {
     return [...ryanair, ...(await screenTravelpayouts(origin, destination, month))];
   }
+  if (flightProviders.screen === "ryanair") return ryanair;
   // Sin Travelpayouts, los destinos que ya tienen tarifas reales de Ryanair no se rellenan.
   const covered = new Set(ryanair.map((o) => o.destination));
   const dests = (destination ? [destination] : anywhereCandidates).filter((d) => !covered.has(d));
@@ -162,6 +164,7 @@ export async function confirm(
   if (ryr && ryr.price <= candidate.price * RYANAIR_TOLERANCE) return { offer: ryr };
 
   if (flightProviders.confirm === "cached") return { offer: candidate };
+  if (flightProviders.confirm === "ryanair") return { offer: null };
   if (flightProviders.confirm === "mock") {
     // La búsqueda "en vivo" simulada puede variar un poco respecto al precio en caché.
     const live = mockOffer(origin, destination, depart, ret, false);

@@ -176,6 +176,14 @@ export async function latestMatches(userId: string, limit = 10): Promise<(Match 
 }
 
 // Borra resultados caducados: viajes ya pasados u ofertas que no se han vuelto a ver en varias búsquedas.
+// Resultados con precios inventados que quedaran de cuando la app usaba datos simulados.
+export async function deleteSimulatedMatches(alertId: string) {
+  await exec(
+    `DELETE FROM matches WHERE alert_id = ? AND (json_extract(data, '$.flight.provider') IN ('simulado', 'sin-cribado') OR json_extract(data, '$.hotel.provider') = 'simulado')`,
+    [alertId],
+  );
+}
+
 export async function pruneMatches(alertId: string, staleHours: number) {
   const today = new Date().toISOString().slice(0, 10);
   await exec(

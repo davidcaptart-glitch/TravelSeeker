@@ -6,7 +6,8 @@ import { notifyUser } from "./notify";
 import { confirm, flightProviders, screen } from "./providers/flights";
 import { groundOptions, lastMile } from "./providers/ground";
 import { searchHotels } from "./providers/hotels";
-import { dueAlerts, ensureUser, pruneMatches, saveRun, upsertMatch } from "./repo";
+import { ALLOW_MOCK } from "./providers/mock";
+import { deleteSimulatedMatches, dueAlerts, ensureUser, pruneMatches, saveRun, upsertMatch } from "./repo";
 import type { Alert, FlightOffer, MatchData, Place, RunSummary } from "./types";
 
 // Búsquedas de pago (SerpApi) por ejecución; las de Ryanair no cuentan.
@@ -98,6 +99,7 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
     return summary;
   }
   const windowByKey = new Map(windows.map((w) => [`${w.depart}_${w.ret}`, w]));
+  if (!ALLOW_MOCK) await deleteSimulatedMatches(alert.id);
 
   // 1) Cribado barato con precios en caché.
   const dests = destinationAirports(alert);
@@ -105,11 +107,13 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
   if (dests && !dests.length) notes.push("No hay aeropuertos cerca del destino: amplía el radio o activa rutas alternativas.");
   const raw: FlightOffer[] = [];
   const targetPlace = c.destination.kind === "place" ? c.destination.place : null;
+  const uncovered: string[] = [];
   for (const origin of c.origins) {
     for (const dest of dests ?? [null]) {
       if (dest === origin) continue;
       // Los aeropuertos elegidos a mano se respetan siempre; los automáticos se filtran.
       if (dest && !c.destinationAirports.length && !worthFlying(origin, dest, targetPlace)) continue;
+      const before = raw.length;
       for (const month of monthsOf(windows)) {
         try {
           raw.push(
@@ -119,9 +123,17 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
           notes.push(`Cribado ${origin}→${dest ?? "cualquier sitio"} ${month}: ${(err as Error).message}`);
         }
       }
+      if (raw.length === before) uncovered.push(`${origin}→${dest ?? "cualquier sitio"}`);
     }
   }
   summary.screened = raw.length;
+  // Sin más fuentes que Ryanair, una ruta sin precios es casi siempre una ruta que Ryanair no vuela.
+  if (flightProviders.screen === "ryanair" && uncovered.length) {
+    notes.push(
+      `Por ahora solo hay precios reales de Ryanair y no hemos encontrado vuelos de Ryanair en ${uncovered.join(", ")} para tus fechas. ` +
+        "Para buscar en el resto de aerolíneas hace falta conectar otra fuente de precios.",
+    );
+  }
 
   const best = new Map<string, FlightOffer>();
   for (const o of raw) {

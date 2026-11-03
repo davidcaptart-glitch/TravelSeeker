@@ -1,14 +1,14 @@
 import { cached, peekCache } from "../db";
 import { take } from "../quota";
 import type { AlertConfig, HotelOffer, Place } from "../types";
-import { hash, timeBucket } from "./mock";
+import { ALLOW_MOCK, hash, timeBucket } from "./mock";
 
 import { xoteloHotels } from "./xotelo";
 
 // Alojamiento: primero Xotelo (gratis, sin cupo). Si la ciudad no está, SerpApi Google Hotels
 // (comparte el cupo gratuito con los vuelos) o, sin clave, datos simulados.
 const SERPAPI_KEY = process.env.SERPAPI_KEY;
-export const hotelProvider = SERPAPI_KEY ? "serpapi" : "mock";
+export const hotelProvider = SERPAPI_KEY ? "serpapi" : ALLOW_MOCK ? "mock" : "none";
 
 type HotelCriteria = NonNullable<AlertConfig["hotel"]>;
 
@@ -137,7 +137,7 @@ export async function searchHotels(
     offers = free.offers;
   } else if (hotelProvider === "mock") {
     offers = mockHotels(place, checkIn, checkOut, nights, guests);
-  } else {
+  } else if (hotelProvider === "serpapi") {
     const wantsHotels = criteria.types.some((t) => t !== "apartment");
     const wantsRentals = criteria.types.includes("apartment");
     for (const rentals of [false, true]) {

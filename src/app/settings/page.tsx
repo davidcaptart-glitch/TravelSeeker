@@ -15,6 +15,7 @@ const PROVIDER_TEXT: Record<string, string> = {
   cached: "Precio en caché (sin confirmación en vivo)",
   none: "Sin cribado: todas las fechas van a confirmación",
   mock: "Simulado (modo demostración)",
+  ryanair: "Ninguna todavía: solo hay precios reales de Ryanair",
 };
 
 function Section({ icon: Icon, title, hint, children }: { icon: typeof Bell; title: string; hint?: string; children: React.ReactNode }) {
@@ -80,18 +81,24 @@ async function SettingsContent() {
             Ciudad en TripAdvisor: Wikidata
             {process.env.TRIPADVISOR_KEY ? " + API oficial de TripAdvisor" : " (añade TRIPADVISOR_KEY para cubrir más destinos)"}
           </li>
-          <li>Alojamiento donde Xotelo no llega: {PROVIDER_TEXT[hotelProvider]}</li>
+          <li>Alojamiento donde Xotelo no llega: {hotelProvider === "none" ? "ninguna todavía" : PROVIDER_TEXT[hotelProvider]}</li>
           <li>Autocares FlixBus: precio real del día</li>
           <li>Tren, bus y transporte urbano: Transitous (horarios reales, gratis)</li>
           <li>Taxi: distancia real con OSRM × tarifa aproximada del país</li>
           <li>Festivos: Nager.Date</li>
         </ul>
-        {serp.limit !== Infinity && (
+        {process.env.SERPAPI_KEY && serp.limit !== Infinity && (
           <p className="hint mt-3">
             Búsquedas en vivo: {serp.usedMonth}/{serp.limit} este mes · {serp.usedToday}/{serp.todayBudget} hoy
           </p>
         )}
       </details>
+
+      {/* Versión publicada: si en el móvil sale la misma que aquí, tienes la última. */}
+      <p className="hint text-center">
+        Versión {process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local"}
+        {process.env.VERCEL_GIT_COMMIT_MESSAGE ? ` · ${process.env.VERCEL_GIT_COMMIT_MESSAGE.split("\n")[0]}` : ""}
+      </p>
     </div>
   );
 }
