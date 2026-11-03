@@ -3,11 +3,11 @@ import { minutes } from "./format";
 import { getAirport, haversineKm, nearbyAirports, THEMED_DESTINATIONS } from "./geo";
 import { getHolidays } from "./holidays";
 import { notifyUser } from "./notify";
-import { confirm, flightProviders, screen } from "./providers/flights";
+import { confirm, flightProviders, monthlyTrend, screen } from "./providers/flights";
 import { groundOptions, lastMile } from "./providers/ground";
 import { searchHotels } from "./providers/hotels";
 import { ALLOW_MOCK } from "./providers/mock";
-import { deleteSimulatedMatches, dueAlerts, ensureUser, pruneMatches, saveRun, upsertMatch } from "./repo";
+import { addPricePoint, deleteSimulatedMatches, dueAlerts, ensureUser, pruneMatches, saveRun, upsertMatch } from "./repo";
 import type { Alert, FlightOffer, MatchData, Place, RunSummary } from "./types";
 
 // Búsquedas de pago (SerpApi) por ejecución; las de Ryanair no cuentan.
@@ -137,8 +137,24 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
 
   const best = new Map<string, FlightOffer>();
   for (const o of raw) {
+    // Fechas parecidas (mismos meses y noches, cualquier día de la semana): para saber si tu precio es realista.
+    const nights = Math.round((Date.parse(o.ret) - Date.parse(o.depart)) / 86_400_000);
+    if (
+      o.destination !== o.origin &&
+      o.stops <= c.flight.maxStops &&
+      o.price > 0 &&
+      c.dates.months.includes(o.depart.slice(0, 7)) &&
+      nights >= c.dates.minNights &&
+      nights <= c.dates.maxNights
+    ) {
+      summary.cheapestSimilar = Math.min(summary.cheapestSimilar ?? Infinity, o.price);
+    }
     if (!windowByKey.has(`${o.depart}_${o.ret}`)) continue;
     if (anyCodes && anyCodes.size && !anyCodes.has(o.destination)) continue;
+    // Para el histórico: lo más barato en tus fechas aunque supere tu precio (sí respeta las escalas).
+    if (o.destination !== o.origin && o.stops <= c.flight.maxStops && o.price > 0) {
+      summary.cheapestForDates = Math.min(summary.cheapestForDates ?? Infinity, o.price);
+    }
     if (o.destination === o.origin || !flightOk(o, alert, SCREEN_TOLERANCE)) continue;
     const k = `${o.origin}|${o.destination}|${o.depart}|${o.ret}`;
     const prev = best.get(k);
@@ -151,6 +167,7 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
   const confirmed: FlightOffer[] = [];
   let paid = 0;
   let quotaHit = false;
+  let bestTotal = Infinity;
   for (const cand of candidates.slice(0, MAX_CANDIDATES)) {
     if (confirmed.length >= MAX_MATCHES_PER_RUN * 2) break;
     try {
@@ -211,6 +228,7 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
     const total = flight.price * c.flight.passengers + (data.hotel?.total ?? 0);
     const key = `${alert.id}|${kind}|${flight.origin}|${flight.destination}|${flight.depart}|${flight.ret}`;
     const change = await upsertMatch(alert.id, kind, key, total, data);
+    bestTotal = Math.min(bestTotal, total);
 
     const shouldNotify = c.notifyMode === "flight" || kind === "full";
     if (change && shouldNotify) {
@@ -236,11 +254,32 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
     summary.groundOnly = summary.groundOnlyOptions[0];
   }
 
+  // Tendencia del mercado (próximos 12 meses) para decir si tu precio es realista.
+  if (dests?.length) {
+    const pairs = c.origins.flatMap((o) => dests.filter((d) => d !== o).map((d) => [o, d] as const)).slice(0, 4);
+    const trends = await Promise.all(pairs.map(([o, d]) => monthlyTrend(o, d).catch(() => ({}) as Record<string, number>)));
+    const months: Record<string, number> = {};
+    for (const t of trends) for (const [m, p] of Object.entries(t)) months[m] = Math.min(months[m] ?? Infinity, p);
+    if (Object.keys(months).length) {
+      summary.market = {
+        route: `${c.origins.join("/")} → ${pairs.map(([, d]) => d).filter((d, i, a) => a.indexOf(d) === i).join("/")}`,
+        months: Object.entries(months)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([month, price]) => ({ month, price })),
+      };
+    }
+  }
+
   await pruneMatches(alert.id, Math.max(24, c.checkEveryHours * 4));
   if (flightProviders.screen === "mock") {
     notes.push("Sin claves: los precios de Ryanair son reales; el resto de vuelos, simulados (añade claves en .env.local).");
   }
   await saveRun(alert.id, summary);
+  await addPricePoint(alert.id, {
+    at: summary.at,
+    flight: summary.cheapestForDates ?? summary.cheapestSimilar ?? null,
+    total: Number.isFinite(bestTotal) ? bestTotal : null,
+  });
   return summary;
 }
 

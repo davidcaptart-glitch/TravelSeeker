@@ -116,6 +116,9 @@ export type HotelOffer = {
   lon?: number;
   link?: string;
   image?: string;
+  // Rango de precio por noche habitual del alojamiento (según TripAdvisor).
+  usualMin?: number;
+  usualMax?: number;
 };
 
 export type TransitLeg = {
@@ -181,5 +184,13 @@ export type RunSummary = {
   groundOnly?: GroundOption;
   // Todas las alternativas por tierra (la más rápida es groundOnly).
   groundOnlyOptions?: GroundOption[];
+  // Vuelo ida y vuelta más barato por persona visto en tus fechas, cumpla o no tu precio.
+  cheapestForDates?: number;
+  // Lo mismo en fechas parecidas: mismos meses y noches, cualquier día de la semana.
+  cheapestSimilar?: number;
+  // Tendencia del mercado: lo más barato de cada mes (ida + vuelta estimada), próximos 12 meses.
+  market?: { route: string; months: { month: string; price: number }[] };
   notes: string[];
 };
+
+export type PricePoint = { at: string; flight: number | null; total: number | null };

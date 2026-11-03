@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { exec, query } from "./db";
-import type { Alert, AlertConfig, Match, MatchData, RunSummary } from "./types";
+import type { Alert, AlertConfig, Match, MatchData, PricePoint, RunSummary } from "./types";
 
 type AlertRow = {
   id: string;
@@ -70,7 +70,10 @@ export async function updateAlertConfig(id: string, userId: string, config: Aler
   // Al cambiar criterios se fuerza una nueva búsqueda en la próxima vuelta del worker.
   const n = await exec("UPDATE alerts SET config = ?, last_run_at = NULL WHERE id = ? AND user_id = ?", [JSON.stringify(config), id, userId]);
   // Los resultados antiguos se buscaron con otros criterios.
-  if (n) await exec("DELETE FROM matches WHERE alert_id = ?", [id]);
+  if (n) {
+    await exec("DELETE FROM matches WHERE alert_id = ?", [id]);
+    await exec("DELETE FROM price_history WHERE alert_id = ?", [id]);
+  }
 }
 
 export async function setAlertActive(id: string, userId: string, active: boolean) {
@@ -79,11 +82,27 @@ export async function setAlertActive(id: string, userId: string, active: boolean
 
 export async function deleteAlert(id: string, userId: string) {
   const n = await exec("DELETE FROM alerts WHERE id = ? AND user_id = ?", [id, userId]);
-  if (n) await exec("DELETE FROM matches WHERE alert_id = ?", [id]);
+  if (n) {
+    await exec("DELETE FROM matches WHERE alert_id = ?", [id]);
+    await exec("DELETE FROM price_history WHERE alert_id = ?", [id]);
+  }
 }
 
 export async function saveRun(id: string, summary: RunSummary) {
   await exec("UPDATE alerts SET last_run_at = ?, last_summary = ? WHERE id = ?", [summary.at, JSON.stringify(summary), id]);
+}
+
+/** Un punto del histórico por búsqueda: vuelo más barato en tus fechas y mejor resultado que cumple. */
+export async function addPricePoint(alertId: string, p: PricePoint) {
+  if (p.flight === null && p.total === null) return;
+  await exec("INSERT INTO price_history (alert_id, at, flight, total) VALUES (?, ?, ?, ?)", [alertId, p.at, p.flight, p.total]);
+}
+
+export async function priceHistory(alertId: string, days = 120): Promise<PricePoint[]> {
+  return query<PricePoint>(
+    "SELECT at, flight, total FROM price_history WHERE alert_id = ? AND at >= datetime('now', ?) ORDER BY at",
+    [alertId, `-${days} days`],
+  );
 }
 
 export async function dueAlerts(): Promise<Alert[]> {

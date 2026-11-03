@@ -47,6 +47,13 @@ CREATE TABLE IF NOT EXISTS cache (
   value TEXT NOT NULL,
   expires_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS price_history (
+  alert_id TEXT NOT NULL,
+  at TEXT NOT NULL,
+  flight REAL,
+  total REAL
+);
+CREATE INDEX IF NOT EXISTS price_history_alert ON price_history (alert_id, at);
 CREATE TABLE IF NOT EXISTS api_usage (
   provider TEXT NOT NULL,
   period TEXT NOT NULL,

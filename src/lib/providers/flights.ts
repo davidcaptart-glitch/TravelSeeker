@@ -75,6 +75,30 @@ async function screenTravelpayouts(origin: string, destination: string | null, m
   });
 }
 
+type TPGrouped = { success: boolean; data?: Record<string, { price: number }> };
+
+async function cheapestByMonth(origin: string, destination: string): Promise<Record<string, number>> {
+  const params = new URLSearchParams({ origin, destination, currency: "eur", group_by: "month", token: TP_TOKEN! });
+  return cached(`tp:month:${origin}:${destination}`, 12 * 3600, async () => {
+    const res = await fetch(`https://api.travelpayouts.com/aviasales/v3/grouped_prices?${params}`);
+    if (!res.ok) throw new Error(`Travelpayouts ${res.status}`);
+    const json = (await res.json()) as TPGrouped;
+    return Object.fromEntries(Object.entries(json.data ?? {}).map(([m, v]) => [m, v.price]));
+  });
+}
+
+/**
+ * Lo más barato de cada mes de los próximos 12 para una ruta: ida más barata + vuelta más barata del mes
+ * (estimación de ida y vuelta, por persona). Vacío sin Travelpayouts.
+ */
+export async function monthlyTrend(origin: string, destination: string): Promise<Record<string, number>> {
+  if (!TP_TOKEN) return {};
+  const [out, back] = await Promise.all([cheapestByMonth(origin, destination), cheapestByMonth(destination, origin)]);
+  const months: Record<string, number> = {};
+  for (const [m, p] of Object.entries(out)) if (back[m]) months[m] = Math.round(p + back[m]);
+  return months;
+}
+
 function mockPrice(origin: string, destination: string, depart: string, ret: string): number {
   const a = getAirport(origin);
   const b = getAirport(destination);

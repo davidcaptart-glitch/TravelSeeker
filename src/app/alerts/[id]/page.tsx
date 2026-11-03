@@ -5,9 +5,10 @@ import { Suspense } from "react";
 import Loading from "@/app/loading";
 import { AlertActions } from "@/components/AlertActions";
 import { GroundOptions, pickGround } from "@/components/GroundOptions";
+import { PriceInsights } from "@/components/PriceInsights";
 import { formatDate } from "@/lib/dates";
 import { ago, eur, minutes, monthLabel, STOPS_LABEL } from "@/lib/format";
-import { getAlert, listMatches, markMatchesSeen } from "@/lib/repo";
+import { getAlert, listMatches, markMatchesSeen, priceHistory } from "@/lib/repo";
 import { currentUserId } from "@/lib/session";
 import type { Match } from "@/lib/types";
 
@@ -147,6 +148,12 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
                 <p className="hint">
                   {eur(hotel.total)} en total ({eur(hotel.pricePerNight)}/noche) · {hotel.provider}
                 </p>
+                {hotel.usualMin && hotel.usualMax ? (
+                  <p className="hint mt-1 flex flex-wrap items-center gap-1.5">
+                    Suele costar {eur(hotel.usualMin)}–{eur(hotel.usualMax)}/noche
+                    {hotel.pricePerNight <= hotel.usualMin * 1.1 && <span className="badge bg-good-soft text-good">Buen precio</span>}
+                  </p>
+                ) : null}
               </div>
               {hotel.link && (
                 <a href={hotel.link} target="_blank" rel="noreferrer" className="btn-ghost min-h-10 shrink-0 px-3">
@@ -168,7 +175,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
   const userId = await currentUserId();
   const alert = await getAlert(id, userId);
   if (!alert) notFound();
-  const matches = await listMatches(id);
+  const [matches, history] = await Promise.all([listMatches(id), priceHistory(id)]);
   const c = alert.config;
   const s = alert.lastSummary;
   const visible = matches.slice(0, 12);
@@ -227,6 +234,8 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
       </section>
 
       <AlertActions id={id} active={alert.active} />
+
+      <PriceInsights summary={s ?? null} history={history} selectedMonths={c.dates.months} maxPrice={c.flight.maxPrice} />
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">

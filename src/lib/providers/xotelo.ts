@@ -215,6 +215,8 @@ export async function xoteloHotels(
         lon: h.geo?.longitude,
         link: h.url,
         image: h.image,
+        usualMin: h.price_ranges?.minimum,
+        usualMax: h.price_ranges?.maximum,
       });
     });
   }
