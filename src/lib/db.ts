@@ -62,6 +62,15 @@ CREATE TABLE IF NOT EXISTS api_usage (
 );
 `;
 
+// Columnas añadidas después de crear la base (SQLite no tiene ADD COLUMN IF NOT EXISTS).
+async function migrate(c: Client) {
+  const cols = await c.execute("PRAGMA table_info(matches)");
+  if (!cols.rows.some((r) => r.name === "status")) {
+    // new: pendiente de decidir · saved: guardado para más tarde · dismissed: descartado · booked: lo has cogido.
+    await c.execute("ALTER TABLE matches ADD COLUMN status TEXT NOT NULL DEFAULT 'new'");
+  }
+}
+
 let client: Client | null = null;
 let ready: Promise<void> | null = null;
 
@@ -69,7 +78,8 @@ function getClient(): Client {
   if (!client) {
     if (url.startsWith("file:")) mkdirSync("data", { recursive: true });
     client = createClient({ url, authToken });
-    ready = client.executeMultiple(SCHEMA);
+    const c = client;
+    ready = c.executeMultiple(SCHEMA).then(() => migrate(c));
   }
   return client;
 }

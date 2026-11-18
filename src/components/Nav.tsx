@@ -1,42 +1,34 @@
 "use client";
 
-import { Bell, Plus, Settings } from "lucide-react";
+import { Bookmark, Plus, Radar, Settings, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense } from "react";
 
+const NEW = "/alerts/new";
+
+// Cinco destinos claros: lo que hay que decidir, lo guardado, crear, lo que vigilas y los ajustes.
 const TABS = [
+  { href: "/", label: "Ofertas", icon: Sparkles, match: (p: string) => p === "/" },
+  { href: "/saved", label: "Guardados", icon: Bookmark, match: (p: string) => p.startsWith("/saved") },
+  { href: NEW, label: "Nueva", icon: Plus, match: (p: string) => p === NEW },
   {
-    href: "/",
+    href: "/alerts",
     label: "Alertas",
-    icon: Bell,
-    match: (p: string) => p === "/" || (p.startsWith("/alerts/") && p !== "/alerts/new"),
+    icon: Radar,
+    match: (p: string) => p.startsWith("/alerts") && p !== NEW,
   },
-  {
-    href: "/alerts/new",
-    label: "Nueva",
-    icon: Plus,
-    match: (p: string) => p === "/alerts/new",
-  },
-  {
-    href: "/settings",
-    label: "Ajustes",
-    icon: Settings,
-    match: (p: string) => p.startsWith("/settings"),
-  },
+  { href: "/settings", label: "Ajustes", icon: Settings, match: (p: string) => p.startsWith("/settings") },
 ];
 
 export function Logo() {
   return (
-    <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
-      <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-ink to-ink-2 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.15)]">
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-          <path d="M3 17c4-1 7-4 9-8" strokeLinecap="round" />
-          <path d="M12 9l2.5-4.5L21 3l-1.5 6.5L15 12" strokeLinejoin="round" />
-          <circle cx="5" cy="19" r="1.6" fill="var(--accent)" stroke="none" />
-        </svg>
+    <Link href="/" className="flex items-center gap-2 text-[1.15rem] font-extrabold tracking-tight" aria-label="TravelSeeker, inicio">
+      {/* eslint-disable-next-line @next/next/no-img-element -- marca pequeña y estática */}
+      <img src="/brand-mark.png" alt="" width={36} height={36} className="h-9 w-9" />
+      <span>
+        Travel<span className="text-gradient">Seeker</span>
       </span>
-      TravelSeeker
     </Link>
   );
 }
@@ -45,58 +37,73 @@ export function Logo() {
 function TopNavView({ path }: { path: string }) {
   return (
     <nav
-      className="hidden items-center gap-1 rounded-full bg-surface/70 p-1 text-sm backdrop-blur-xl md:flex"
+      className="hidden items-center gap-1 rounded-full bg-surface/80 p-1 text-sm backdrop-blur-xl md:flex"
       style={{ boxShadow: "inset 0 1px 0 var(--highlight), 0 0 0 1px var(--hairline)" }}
     >
-      {TABS.filter((t) => t.href !== "/alerts/new").map((t) => (
+      {TABS.filter((t) => t.href !== NEW).map((t) => (
         <Link
           key={t.href}
           href={t.href}
           aria-current={t.match(path) ? "page" : undefined}
-          className="rounded-full px-4 py-2 font-medium text-muted transition hover:text-foreground aria-[current=page]:bg-foreground/[0.07] aria-[current=page]:text-foreground"
+          className="rounded-full px-4 py-2 font-semibold text-muted transition hover:text-foreground aria-[current=page]:bg-surface-3 aria-[current=page]:text-foreground"
         >
           {t.label}
         </Link>
       ))}
-      <Link href="/alerts/new" className="btn-primary group ml-1 min-h-9">
-        Nueva alerta
-        <span className="btn-icon h-7 w-7">
-          <Plus className="h-4 w-4" />
-        </span>
+      <Link href={NEW} className="btn-primary ml-1 min-h-9">
+        <Plus className="h-4 w-4" /> Nueva alerta
       </Link>
     </nav>
   );
 }
 
-/** Barra inferior tipo app (móvil). */
+/** Barra inferior tipo app (móvil), con el botón "Nueva" destacado en el centro. */
 function BottomNavView({ path }: { path: string }) {
   return (
-    // Isla flotante de cristal, separada de los bordes de la pantalla.
-    <nav className="fixed inset-x-0 z-30 px-4 md:hidden" style={{ bottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
+    <nav className="fixed inset-x-0 z-30 px-3 md:hidden" style={{ bottom: "calc(0.6rem + env(safe-area-inset-bottom))" }}>
       <ul
-        className="mx-auto grid max-w-sm grid-cols-3 items-center rounded-full bg-surface/75 p-1.5 backdrop-blur-xl"
-        style={{ boxShadow: "inset 0 1px 0 var(--highlight), 0 0 0 1px var(--hairline), 0 20px 40px -16px rgb(0 0 0 / 0.35)" }}
+        className="mx-auto grid max-w-md grid-cols-5 items-end rounded-[1.75rem] px-1 pt-1.5 pb-2 backdrop-blur-xl"
+        style={{
+          background: "var(--nav-bg)",
+          boxShadow: "inset 0 1px 0 var(--highlight), 0 0 0 1px var(--hairline), 0 18px 40px -14px var(--nav-shadow)",
+        }}
       >
         {TABS.map((t) => {
           const on = t.match(path);
           const Icon = t.icon;
-          const isNew = t.href === "/alerts/new";
+          if (t.href === NEW) {
+            return (
+              <li key={t.href} className="flex justify-center">
+                <Link
+                  href={t.href}
+                  aria-current={on ? "page" : undefined}
+                  className="group flex flex-col items-center gap-1 text-[11px] font-semibold text-foreground"
+                >
+                  <span
+                    className="-mt-7 grid h-14 w-14 place-items-center rounded-full text-white transition group-active:scale-90"
+                    style={{
+                      background: "var(--grad)",
+                      boxShadow: "inset 0 1px 0 rgb(255 255 255 / 0.35), 0 0 0 5px var(--background), 0 10px 26px -6px rgb(91 124 255 / 0.9)",
+                    }}
+                  >
+                    <Icon className="h-6 w-6 transition group-hover:rotate-90" strokeWidth={2.6} />
+                  </span>
+                  {t.label}
+                </Link>
+              </li>
+            );
+          }
           return (
             <li key={t.href} className="flex justify-center">
               <Link
                 href={t.href}
                 aria-current={on ? "page" : undefined}
-                aria-label={t.label}
-                className={`flex h-12 items-center justify-center gap-1.5 rounded-full text-xs font-semibold transition active:scale-95 ${
-                  isNew
-                    ? "w-full bg-accent text-accent-ink shadow-[inset_0_1px_0_rgb(255_255_255/0.25)]"
-                    : on
-                      ? "w-full bg-foreground/[0.07] text-foreground"
-                      : "w-full text-muted"
-                }`}
+                className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition active:scale-95 ${on ? "text-foreground" : "text-muted"}`}
               >
-                <Icon className="h-5 w-5" strokeWidth={isNew ? 2.2 : undefined} />
-                {(on || isNew) && <span>{t.label}</span>}
+                <span className={`grid h-8 w-12 place-items-center rounded-full transition ${on ? "bg-accent-soft text-cyan" : ""}`}>
+                  <Icon className="h-[21px] w-[21px]" strokeWidth={on ? 2.2 : undefined} />
+                </span>
+                {t.label}
               </Link>
             </li>
           );

@@ -1,4 +1,4 @@
-import { Bell, ChevronDown, Database, Smartphone, UserRound } from "lucide-react";
+import { Bell, ChevronDown, Database, Megaphone, Smartphone, UserRound } from "lucide-react";
 import { Suspense } from "react";
 import Loading from "@/app/loading";
 import { LinkDeviceForm } from "@/components/LinkDeviceForm";
@@ -7,6 +7,7 @@ import { SettingsForm } from "@/components/SettingsForm";
 import { flightProviders } from "@/lib/providers/flights";
 import { hotelProvider } from "@/lib/providers/hotels";
 import { usage } from "@/lib/quota";
+import { CHANGELOG } from "@/lib/changelog";
 import { currentUser } from "@/lib/session";
 
 const PROVIDER_TEXT: Record<string, string> = {
@@ -22,7 +23,7 @@ function Section({ icon: Icon, title, hint, children }: { icon: typeof Bell; tit
   return (
     <section className="card space-y-4">
       <div className="flex items-start gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-accent-soft text-accent">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-accent-soft text-cyan">
           <Icon className="h-5 w-5" />
         </span>
         <div>
@@ -41,8 +42,8 @@ async function SettingsContent() {
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div>
-        <span className="eyebrow-pill">Tu cuenta</span>
-        <h1 className="mt-3 text-[1.75rem] leading-tight font-semibold tracking-tight">Ajustes</h1>
+        <h1 className="text-[1.75rem] leading-tight font-extrabold tracking-tight">Ajustes</h1>
+        <p className="mt-1 text-sm text-muted">Avisos, tus datos y novedades de la app.</p>
       </div>
 
       <Section
@@ -59,6 +60,24 @@ async function SettingsContent() {
 
       <Section icon={Smartphone} title="Tus alertas en otro dispositivo">
         <LinkDeviceForm userId={user.id} />
+      </Section>
+
+      <Section icon={Megaphone} title="Novedades" hint="La app se actualiza sola. Esto es lo que ha cambiado.">
+        <ol className="space-y-4">
+          {CHANGELOG.map((r, i) => (
+            <li key={r.id} className={i ? "border-t border-border pt-4" : ""}>
+              <p className="hint">{new Date(r.date).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}</p>
+              <p className="font-bold">{r.title}</p>
+              <ul className="mt-2 space-y-1.5 text-sm text-muted">
+                {r.items.map((it) => (
+                  <li key={it.title}>
+                    <span className="font-semibold text-foreground">{it.title}:</span> {it.text}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ol>
       </Section>
 
       <details className="card group text-sm">

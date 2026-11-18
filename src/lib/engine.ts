@@ -7,14 +7,15 @@ import { confirm, flightProviders, monthlyTrend, screen } from "./providers/flig
 import { groundOptions, lastMile } from "./providers/ground";
 import { searchHotels } from "./providers/hotels";
 import { ALLOW_MOCK } from "./providers/mock";
-import { addPricePoint, deleteSimulatedMatches, dueAlerts, ensureUser, pruneMatches, saveRun, upsertMatch } from "./repo";
+import { addPricePoint, decidedTrips, deleteSimulatedMatches, dueAlerts, ensureUser, pruneMatches, saveRun, upsertMatch } from "./repo";
 import type { Alert, FlightOffer, MatchData, Place, RunSummary } from "./types";
 
 // Búsquedas de pago (SerpApi) por ejecución; las de Ryanair no cuentan.
 const CONFIRM_PER_RUN = Number(process.env.CONFIRM_PER_RUN ?? 4);
 // Candidatos que se revisan como mucho por ejecución (la mayoría se resuelven gratis o desde la caché).
 const MAX_CANDIDATES = 40;
-const MAX_MATCHES_PER_RUN = 3;
+// Opciones que se preparan por búsqueda: siempre varias, para que puedas elegir o descartar.
+const MAX_MATCHES_PER_RUN = 6;
 // Los precios en caché pueden estar algo desfasados: dejamos pasar candidatos un 15 % por encima.
 const SCREEN_TOLERANCE = 1.15;
 
@@ -160,6 +161,9 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
     const prev = best.get(k);
     if (!prev || o.price < prev.price) best.set(k, o);
   }
+  // Lo que ya has descartado o cogido no se vuelve a confirmar ni a ofrecer: deja sitio a otras opciones.
+  const decided = await decidedTrips(alert.id);
+  for (const k of best.keys()) if (decided.has(k)) best.delete(k);
   const candidates = [...best.values()].sort((a, b) => a.price - b.price || a.depart.localeCompare(b.depart));
   summary.candidates = candidates.length;
 
@@ -192,6 +196,7 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
   confirmed.sort((a, b) => a.price - b.price);
 
   // 3) Alojamiento, trayecto aeropuerto→destino y avisos.
+  const fresh: { id: string; change: "new" | "cheaper"; total: number; text: string }[] = [];
   for (const flight of confirmed.slice(0, MAX_MATCHES_PER_RUN)) {
     const window = windowByKey.get(`${flight.depart}_${flight.ret}`)!;
     const place = destinationPlace(alert, flight);
@@ -227,19 +232,30 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
     summary.flightMatches++;
     const total = flight.price * c.flight.passengers + (data.hotel?.total ?? 0);
     const key = `${alert.id}|${kind}|${flight.origin}|${flight.destination}|${flight.depart}|${flight.ret}`;
-    const change = await upsertMatch(alert.id, kind, key, total, data);
+    const { id: matchId, change } = await upsertMatch(alert.id, kind, key, total, data);
     bestTotal = Math.min(bestTotal, total);
 
     const shouldNotify = c.notifyMode === "flight" || kind === "full";
     if (change && shouldNotify) {
       const when = `${formatDate(flight.depart)} – ${formatDate(flight.ret)}`;
       const hotelTxt = data.hotel ? ` + ${data.hotel.name} ${Math.round(data.hotel.total)} €` : "";
-      const title = `${change === "cheaper" ? "⬇️ Baja de precio" : "✈️ ¡Oferta!"} ${c.name}`;
       const ground = data.lastMile?.options.reduce((a, b) => (b.cost < a.cost ? b : a), data.lastMile.options[0]);
       const groundTxt = ground ? ` Del aeropuerto: ${ground.label} (${minutes(ground.minutes)}, ~${Math.round(ground.cost)} €).` : "";
-      const body = `${flight.origin}→${flight.destination} ${when}: vuelo ${flight.price} €/pers${hotelTxt}. Total ${Math.round(total)} €.${groundTxt}`;
-      if ((await notifyUser(alert.userId, { title, body, path: `/alerts/${alert.id}` })) > 0) summary.notified++;
+      const text = `${flight.origin}→${flight.destination} ${when}: vuelo ${flight.price} €/pers${hotelTxt}. Total ${Math.round(total)} €.${groundTxt}`;
+      fresh.push({ id: matchId, change, total, text });
     }
+  }
+
+  // Un aviso por búsqueda: con detalle si es una sola opción; agrupado si hay varias (sin llenarte el móvil).
+  if (fresh.length) {
+    const cheapest = Math.round(Math.min(...fresh.map((f) => f.total)));
+    const one = fresh.length === 1 ? fresh[0] : null;
+    const title = one
+      ? `${one.change === "cheaper" ? "⬇️ Ha bajado de precio" : "✈️ Viaje que encaja"} · ${c.name}`
+      : `✈️ ${fresh.length} opciones nuevas · ${c.name}`;
+    const body = one ? `${one.text} ¿Lo guardas o lo descartas?` : `Desde ${cheapest} €. Revisa las opciones: guarda las que te interesen y descarta el resto.`;
+    const sent = await notifyUser(alert.userId, { title, body, path: one ? `/alerts/${alert.id}#m-${one.id}` : "/", matchId: one?.id });
+    if (sent > 0) summary.notified = fresh.length;
   }
 
   // Alternativa solo por tierra (tren/bus) desde el punto de salida indicado.

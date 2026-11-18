@@ -1,10 +1,12 @@
-import { AlertTriangle, ArrowLeft, Bed, ChevronDown, ExternalLink, MapPin, Plane, Radar, Star, TrainFront } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bed, ChevronDown, ExternalLink, MapPin, PartyPopper, Plane, Radar, Star, TrainFront } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import Loading from "@/app/loading";
 import { AlertActions } from "@/components/AlertActions";
 import { GroundOptions, pickGround } from "@/components/GroundOptions";
+import { MatchActions } from "@/components/MatchActions";
+import { StillSearching } from "@/components/OfferCard";
 import { PriceInsights } from "@/components/PriceInsights";
 import { formatDate } from "@/lib/dates";
 import { ago, eur, minutes, monthLabel, STOPS_LABEL } from "@/lib/format";
@@ -35,11 +37,17 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
   const { cheapest } = pickGround(lastMile?.options ?? []);
   const groundRoundTrip = cheapest ? cheapest.cost * 2 * (cheapest.kind === "taxi" ? 1 : pax) : 0;
   return (
-    <article className={`card overflow-hidden p-0 ${m.seen ? "" : "ring-2 ring-accent/50"}`}>
+    <article id={`m-${m.id}`} className={`${m.seen && m.status !== "booked" ? "card" : "card-glow"} scroll-mt-24 overflow-hidden p-0`}>
       <header className="flex items-start justify-between gap-3 p-4 sm:p-5">
         <div>
           <div className="mb-1 flex flex-wrap gap-1.5">
-            {!m.seen && <span className="badge bg-accent text-accent-ink">Nuevo</span>}
+            {m.status === "booked" && (
+              <span className="badge bg-good-soft text-good">
+                <PartyPopper className="h-3 w-3" /> Reservado
+              </span>
+            )}
+            {m.status === "saved" && <span className="badge bg-accent-soft text-accent">Guardado</span>}
+            {!m.seen && m.status === "new" && <span className="badge bg-gradient-brand text-white">Nuevo</span>}
             {best && <span className="badge bg-good-soft text-good">Mejor precio</span>}
           </div>
           <p className="text-lg font-semibold">
@@ -51,7 +59,7 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <p className="text-2xl font-semibold text-accent tabular-nums">{eur(m.totalPrice)}</p>
+          <p className="text-gradient text-2xl font-extrabold tabular-nums">{eur(m.totalPrice)}</p>
           <p className="hint">{hotel ? "vuelo + alojamiento" : "solo vuelo"}</p>
           {groundRoundTrip > 0 && (
             <p className="mt-1 text-sm font-medium tabular-nums">
@@ -166,6 +174,9 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
           )}
         </section>
       </div>
+      <footer className="border-t border-border bg-surface-2/40 p-4 sm:px-5">
+        <MatchActions id={m.id} status={m.status} link={flight.link} />
+      </footer>
     </article>
   );
 }
@@ -178,9 +189,19 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
   const [matches, history] = await Promise.all([listMatches(id), priceHistory(id)]);
   const c = alert.config;
   const s = alert.lastSummary;
-  const visible = matches.slice(0, 12);
-  const bestPrice = matches.length ? Math.min(...matches.map((m) => m.totalPrice)) : null;
-  const bestId = matches.find((m) => m.totalPrice === bestPrice)?.id;
+  const booked = matches.filter((m) => m.status === "booked");
+  const pendingList = matches.filter((m) => m.status === "new");
+  const savedList = matches.filter((m) => m.status === "saved");
+  const dismissed = matches.filter((m) => m.status === "dismissed");
+  const open = [...pendingList, ...savedList];
+  const bestPrice = open.length ? Math.min(...open.map((m) => m.totalPrice)) : null;
+  const bestId = open.find((m) => m.totalPrice === bestPrice)?.id;
+  const list = (ms: Match[]) =>
+    ms.map((m, i) => (
+      <div key={m.id} className="animate-rise" style={{ animationDelay: `${100 + Math.min(i, 6) * 60}ms` }}>
+        <MatchCard m={m} notifyMode={c.notifyMode} best={m.id === bestId} />
+      </div>
+    ));
   // Se marcan como vistos al abrir la alerta (se muestran resaltados solo esta vez).
   if (matches.some((m) => !m.seen)) await markMatchesSeen(id);
 
@@ -198,7 +219,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <div className="space-y-5">
-      <Link href="/" className="eyebrow-pill transition hover:text-foreground">
+      <Link href="/alerts" className="eyebrow-pill transition hover:text-foreground">
         <ArrowLeft className="h-3.5 w-3.5" /> Alertas
       </Link>
 
@@ -206,10 +227,14 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="flex items-center gap-2 text-xs font-medium text-white/70">
-              <span className={`h-2 w-2 rounded-full ${alert.active ? "bg-good" : "bg-white/40"}`} />
-              {alert.active ? `Buscando cada ${c.checkEveryHours} h` : "Pausada"} · {ago(alert.lastRunAt)}
+              {alert.active ? (
+                <span className="radar relative inline-block h-2 w-2 rounded-full bg-cyan text-cyan" />
+              ) : (
+                <span className="h-2 w-2 rounded-full bg-white/40" />
+              )}
+              {booked.length ? "Viaje reservado" : alert.active ? `Buscando cada ${c.checkEveryHours} h` : "Pausada"} · {ago(alert.lastRunAt)}
             </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-balance">{c.name}</h1>
+            <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-balance">{c.name}</h1>
             <p className="mt-1 text-sm text-white/75">
               <span className="font-mono">{c.origins.join(" · ")}</span> →{" "}
               {c.destination.kind === "place" ? c.destination.place.label.split(",").slice(0, 2).join(",") : "cualquier sitio"}
@@ -219,7 +244,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
           {bestPrice !== null && (
             <div className="shrink-0 text-right">
               <p className="text-xs text-white/65">desde</p>
-              <p className="text-2xl font-semibold tabular-nums">{eur(bestPrice)}</p>
+              <p className="text-2xl font-extrabold tabular-nums">{eur(bestPrice)}</p>
             </div>
           )}
         </div>
@@ -235,31 +260,76 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
 
       <AlertActions id={id} active={alert.active} />
 
+      {booked.length > 0 ? (
+        <section className="space-y-3">
+          <div className="card-glow flex items-start gap-3 p-4">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-good-soft text-good">
+              <PartyPopper className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="font-bold">¡Ya tienes viaje!</p>
+              <p className="text-sm text-muted">Hemos dejado de buscar en esta alerta. Si al final no lo reservas, pulsa «No lo he reservado» y seguimos.</p>
+            </div>
+          </div>
+          {list(booked)}
+        </section>
+      ) : (
+        alert.active && (
+          <div className="card flex items-center gap-3 p-4">
+            <StillSearching
+              text={
+                open.length
+                  ? `Seguimos buscando más opciones cada ${c.checkEveryHours} h, hasta que reserves una.`
+                  : `Seguimos buscando cada ${c.checkEveryHours} h. Te avisaremos en cuanto algo encaje.`
+              }
+            />
+          </div>
+        )
+      )}
+
+      {pendingList.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-bold">
+            Por decidir <span className="font-normal text-muted">({pendingList.length})</span>
+          </h2>
+          {list(pendingList)}
+        </section>
+      )}
+
+      {savedList.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-bold">
+            Guardadas <span className="font-normal text-muted">({savedList.length})</span>
+          </h2>
+          {list(savedList)}
+        </section>
+      )}
+
+      {!open.length && !booked.length && (
+        <div className="card flex flex-col items-center gap-2 py-10 text-center">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-accent-soft text-cyan">
+            <Radar className="h-6 w-6" />
+          </span>
+          <p className="font-bold">{dismissed.length ? "Has revisado todas las opciones" : "Todavía nada cumple tus condiciones"}</p>
+          <p className="max-w-sm text-sm text-muted">
+            {alert.active
+              ? "Seguimos buscando y te avisaremos. Si tarda, prueba a subir el precio o añadir meses."
+              : "La alerta está pausada: reanúdala para seguir recibiendo opciones."}
+          </p>
+        </div>
+      )}
+
       <PriceInsights summary={s ?? null} history={history} selectedMonths={c.dates.months} maxPrice={c.flight.maxPrice} />
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">
-          Resultados{" "}
-          <span className="font-normal text-muted">
-            {matches.length > visible.length ? `(${visible.length} de ${matches.length})` : `(${matches.length})`}
-          </span>
-        </h2>
-        {visible.length ? (
-          visible.map((m, i) => (
-            <div key={m.id} className="animate-rise" style={{ animationDelay: `${150 + Math.min(i, 6) * 70}ms` }}>
-              <MatchCard m={m} notifyMode={c.notifyMode} best={m.id === bestId} />
-            </div>
-          ))
-        ) : (
-          <div className="card flex flex-col items-center gap-2 py-10 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-accent-soft text-accent">
-              <Radar className="h-6 w-6" />
-            </span>
-            <p className="font-medium">Todavía nada cumple tus condiciones</p>
-            <p className="max-w-sm text-sm text-muted">Seguimos buscando y te avisaremos. Si tarda, prueba a subir el precio o añadir meses.</p>
-          </div>
-        )}
-      </section>
+      {dismissed.length > 0 && (
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-2xl px-1 py-2 text-sm font-semibold text-muted">
+            Descartadas ({dismissed.length}) · no te las volveremos a ofrecer
+            <ChevronDown className="h-4 w-4 shrink-0 transition group-open:rotate-180" />
+          </summary>
+          <div className="mt-3 space-y-3 opacity-80">{list(dismissed)}</div>
+        </details>
+      )}
 
       {s?.groundOnly && c.groundFrom && (
         <section className="card space-y-3">

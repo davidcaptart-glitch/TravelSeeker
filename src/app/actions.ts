@@ -9,7 +9,7 @@ import { notifyUser } from "@/lib/notify";
 import * as repo from "@/lib/repo";
 import { currentUserId } from "@/lib/session";
 import { USER_COOKIE, USER_COOKIE_OPTIONS } from "@/lib/identity";
-import { alertConfigSchema } from "@/lib/types";
+import { alertConfigSchema, MATCH_STATUSES, type MatchStatus } from "@/lib/types";
 
 export type FormState = { error?: string } | undefined;
 
@@ -50,10 +50,22 @@ export async function runNow(id: string) {
   revalidatePath(`/alerts/${id}`);
 }
 
+export async function decide(matchId: string, status: MatchStatus) {
+  const userId = await currentUserId();
+  if (!MATCH_STATUSES.includes(status)) return;
+  const alertId = await repo.decideMatch(matchId, userId, status);
+  if (!alertId) return;
+  revalidatePath("/");
+  revalidatePath("/saved");
+  revalidatePath("/alerts");
+  revalidatePath(`/alerts/${alertId}`);
+}
+
 export async function toggleAlert(id: string, active: boolean) {
   const userId = await currentUserId();
   await repo.setAlertActive(id, userId, active);
   revalidatePath("/");
+  revalidatePath("/alerts");
   revalidatePath(`/alerts/${id}`);
 }
 

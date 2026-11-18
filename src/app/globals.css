@@ -1,65 +1,43 @@
 ﻿@import "tailwindcss";
 
-/* Paleta: tinta azul noche + coral "atardecer" para las acciones y los precios que encajan.
-   Estilo "hardware suave": tarjetas como placas en una bandeja (doble bisel), sombras muy difusas y movimiento con muelle. */
+/* Identidad del logo: azul noche profundo + degradado cian → azul → violeta → magenta.
+   La app es siempre oscura, como la marca: superficies azul marino (nunca negro puro) y luz de color detrás. */
 :root {
-  --background: #f3f1ec;
-  --surface: #ffffff;
-  --surface-2: #f1eee8;
-  --foreground: #12172a;
-  --muted: #646a7d;
-  --border: rgb(18 23 42 / 0.08);
-  --hairline: rgb(18 23 42 / 0.07);
-  --shell: rgb(18 23 42 / 0.035);
-  --highlight: rgb(255 255 255 / 0.8);
-  --accent: #d2461b;
+  --background: #0c1120;
+  --surface: #141b2f;
+  --surface-2: #1c2540;
+  --surface-3: #25304f;
+  --foreground: #eef2ff;
+  --muted: #94a0c2;
+  --border: rgb(255 255 255 / 0.08);
+  --hairline: rgb(255 255 255 / 0.09);
+  --highlight: rgb(255 255 255 / 0.07);
+  --cyan: #22c7ff;
+  --blue: #5b7cff;
+  --violet: #9b5cf6;
+  --magenta: #d43ee6;
+  --grad: linear-gradient(115deg, var(--cyan), var(--blue) 45%, var(--violet) 75%, var(--magenta));
+  --accent: #5fb3ff;
   --accent-ink: #ffffff;
-  --accent-soft: #fde9e1;
-  --ink: #121a38;
-  --ink-2: #26397a;
-  --warn: #9a5b06;
-  --warn-soft: #fcefd6;
-  --good: #17784a;
-  --good-soft: #def3e7;
-  --danger: #c62f2f;
-  --glow-1: rgb(255 122 80 / 0.16);
-  --glow-2: rgb(90 120 255 / 0.12);
-  --lift: 0 1px 1px rgb(18 23 42 / 0.03), 0 18px 40px -22px rgb(18 23 42 / 0.22);
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #07090f;
-    --surface: #10131c;
-    --surface-2: #181c28;
-    --foreground: #eef0f6;
-    --muted: #979db0;
-    --border: rgb(255 255 255 / 0.08);
-    --hairline: rgb(255 255 255 / 0.08);
-    --shell: rgb(255 255 255 / 0.025);
-    --highlight: rgb(255 255 255 / 0.06);
-    --accent: #ff7b4f;
-    --accent-ink: #1a0c06;
-    --accent-soft: #331a12;
-    --ink: #121a38;
-    --ink-2: #263a80;
-    --warn: #f2b65e;
-    --warn-soft: #33250f;
-    --good: #5fd497;
-    --good-soft: #112b1c;
-    --danger: #ff7a7a;
-    --glow-1: rgb(255 122 80 / 0.12);
-    --glow-2: rgb(90 120 255 / 0.14);
-    --lift: 0 1px 1px rgb(0 0 0 / 0.4), 0 20px 44px -22px rgb(0 0 0 / 0.8);
-    color-scheme: dark;
-  }
+  --accent-soft: rgb(91 124 255 / 0.16);
+  --ink: #101731;
+  --ink-2: #1b2552;
+  --warn: #ffc35c;
+  --warn-soft: rgb(255 195 92 / 0.13);
+  --good: #3fe0a5;
+  --good-soft: rgb(63 224 165 / 0.13);
+  --danger: #ff6b8b;
+  --lift: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 24px 48px -28px rgb(0 0 0 / 0.8);
+  --nav-bg: rgb(22 29 52 / 0.86);
+  --nav-shadow: rgb(0 0 0 / 0.55);
+  color-scheme: dark;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-border: var(--border);
@@ -68,27 +46,32 @@
   --color-accent-soft: var(--accent-soft);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
+  --color-cyan: var(--cyan);
+  --color-blue: var(--blue);
+  --color-violet: var(--violet);
+  --color-magenta: var(--magenta);
   --color-warn: var(--warn);
   --color-warn-soft: var(--warn-soft);
   --color-good: var(--good);
   --color-good-soft: var(--good-soft);
   --color-danger: var(--danger);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-brand);
   --font-mono: var(--font-geist-mono);
-  /* Todas las transiciones con muelle en lugar de ease lineal. */
   --default-transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
-  --default-transition-duration: 350ms;
+  --default-transition-duration: 300ms;
   --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+html {
+  background: var(--background);
+}
 body {
   background: var(--background);
   color: var(--foreground);
   -webkit-tap-highlight-color: transparent;
-  font-feature-settings: "ss01", "cv11";
 }
 
-/* Luz ambiental fija detrás de todo (no se repinta al hacer scroll). */
+/* Luz de la marca detrás de todo (fija: no se repinta al hacer scroll). */
 body::before {
   content: "";
   position: fixed;
@@ -96,105 +79,145 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(60rem 40rem at 110% -10%, var(--glow-1), transparent 60%),
-    radial-gradient(50rem 36rem at -20% 0%, var(--glow-2), transparent 60%);
+    radial-gradient(46rem 30rem at 105% -8%, rgb(212 62 230 / 0.16), transparent 62%),
+    radial-gradient(40rem 30rem at -15% -5%, rgb(34 199 255 / 0.14), transparent 60%),
+    radial-gradient(50rem 30rem at 50% 115%, rgb(91 124 255 / 0.1), transparent 60%);
 }
 
-/* Iconos de trazo fino. */
 svg.lucide {
-  stroke-width: 1.6;
+  stroke-width: 1.8;
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--cyan);
   outline-offset: 3px;
 }
 
-/* Doble bisel sin envoltorios extra: núcleo con filo de luz + bandeja translúcida + filo exterior. */
+@utility text-gradient {
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@utility bg-gradient-brand {
+  background: var(--grad);
+}
+
 @utility card {
-  @apply rounded-[1.75rem] bg-surface p-5;
+  @apply rounded-3xl bg-surface p-5;
   box-shadow:
     inset 0 1px 0 var(--highlight),
     0 0 0 1px var(--hairline),
-    0 0 0 6px var(--shell),
-    0 0 0 7px var(--hairline),
     var(--lift);
+}
+/* Tarjeta destacada con borde de degradado de la marca. */
+@utility card-glow {
+  @apply rounded-3xl p-5;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(130deg, rgb(34 199 255 / 0.7), rgb(91 124 255 / 0.35) 40%, rgb(212 62 230 / 0.6)) border-box;
+  box-shadow: var(--lift);
 }
 @utility hero {
   @apply rounded-[2rem] text-white;
   background:
-    radial-gradient(22rem 16rem at 100% 0%, rgb(255 122 80 / 0.55), transparent 70%),
-    radial-gradient(20rem 16rem at 0% 110%, rgb(95 130 255 / 0.45), transparent 70%),
-    linear-gradient(140deg, var(--ink), var(--ink-2));
+    radial-gradient(22rem 16rem at 105% -10%, rgb(212 62 230 / 0.45), transparent 70%),
+    radial-gradient(22rem 18rem at -10% 120%, rgb(34 199 255 / 0.35), transparent 70%),
+    linear-gradient(150deg, #18214a, #111836);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.14),
-    0 0 0 6px var(--shell),
-    0 0 0 7px var(--hairline),
-    0 30px 60px -30px rgb(18 26 56 / 0.55);
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    0 0 0 1px rgb(255 255 255 / 0.08),
+    0 30px 60px -30px rgb(0 0 0 / 0.8);
 }
 @utility glass-tile {
-  @apply rounded-2xl bg-white/10;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), 0 0 0 1px rgb(255 255 255 / 0.06);
+  @apply rounded-2xl bg-white/[0.07];
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 0 0 1px rgb(255 255 255 / 0.06);
 }
 @utility btn {
   @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45;
 }
 @utility btn-primary {
-  @apply btn bg-accent text-accent-ink hover:brightness-110;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 10px 24px -12px var(--accent);
+  @apply btn text-white hover:brightness-110;
+  background: var(--grad);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 12px 28px -14px rgb(91 124 255 / 0.9);
 }
 @utility btn-ghost {
-  @apply btn bg-surface hover:bg-surface-2;
+  @apply btn bg-surface-2 hover:bg-surface-3;
   box-shadow: inset 0 1px 0 var(--highlight), 0 0 0 1px var(--hairline);
 }
 @utility btn-quiet {
   @apply btn px-3 text-muted hover:bg-surface-2 hover:text-foreground;
 }
-/* Icono dentro del botón ("botón en botón") que se desplaza al pasar por encima. */
 @utility btn-icon {
-  @apply -mr-3 grid h-8 w-8 place-items-center rounded-full bg-black/10 transition group-hover:translate-x-0.5 group-hover:-translate-y-px group-hover:scale-105 dark:bg-black/15;
+  @apply -mr-3 grid h-8 w-8 place-items-center rounded-full bg-white/15 transition group-hover:translate-x-0.5 group-hover:scale-105;
 }
 @utility input {
-  @apply min-h-12 w-full rounded-2xl bg-surface-2/70 px-4 text-base outline-none transition placeholder:text-muted/70 focus:bg-surface focus:ring-4 focus:ring-accent/15 sm:text-sm;
+  @apply min-h-12 w-full rounded-2xl bg-surface-2 px-4 text-base outline-none transition placeholder:text-muted/70 focus:bg-surface-3 focus:ring-4 focus:ring-blue/25 sm:text-sm;
   box-shadow: inset 0 0 0 1px var(--hairline);
 }
 @utility label {
-  @apply mb-1.5 block text-sm font-medium;
+  @apply mb-1.5 block text-sm font-semibold;
 }
 @utility hint {
   @apply text-xs text-muted;
 }
 @utility chip {
-  @apply inline-flex min-h-10 cursor-pointer select-none items-center gap-1.5 rounded-full bg-surface px-4 text-sm transition hover:bg-surface-2 active:scale-[0.96];
+  @apply inline-flex min-h-10 cursor-pointer select-none items-center gap-1.5 rounded-full bg-surface-2 px-4 text-sm transition hover:bg-surface-3 active:scale-[0.96];
   box-shadow: inset 0 0 0 1px var(--hairline);
 }
 @utility chip-on {
-  @apply bg-accent-soft font-medium text-accent hover:bg-accent-soft;
-  box-shadow: inset 0 0 0 1.5px var(--accent);
+  @apply bg-accent-soft font-semibold text-white hover:bg-accent-soft;
+  box-shadow: inset 0 0 0 1.5px var(--blue);
 }
 @utility badge {
-  @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
 }
 @utility eyebrow {
   @apply text-xs font-semibold tracking-wide text-muted uppercase;
 }
-/* Etiqueta-píldora diminuta encima de los títulos. */
 @utility eyebrow-pill {
-  @apply inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-1 text-[10px] font-semibold tracking-[0.18em] text-muted uppercase;
+  @apply inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase;
   box-shadow: inset 0 0 0 1px var(--hairline);
 }
 
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(14px);
-    filter: blur(6px);
+    transform: translateY(12px);
   }
 }
 @utility animate-rise {
-  /* backwards (no both): al terminar no deja un contexto de apilamiento que tape los desplegables. */
-  animation: rise 0.55s cubic-bezier(0.32, 0.72, 0, 1) backwards;
+  animation: rise 0.5s cubic-bezier(0.32, 0.72, 0, 1) backwards;
 }
+
+/* Radar de "seguimos buscando": ondas que salen del punto. */
+@keyframes ping-soft {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+@utility radar {
+  position: relative;
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: currentColor;
+    animation: ping-soft 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  &::after {
+    animation-delay: 1.2s;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

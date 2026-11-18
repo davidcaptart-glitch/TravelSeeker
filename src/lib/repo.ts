@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { exec, query } from "./db";
-import type { Alert, AlertConfig, Match, MatchData, PricePoint, RunSummary } from "./types";
+import type { Alert, AlertConfig, Match, MatchData, MatchStatus, PricePoint, RunSummary } from "./types";
 
 type AlertRow = {
   id: string;
@@ -121,6 +121,7 @@ type MatchRow = {
   total_price: number;
   data: string;
   seen: number;
+  status: MatchStatus;
   created_at: string;
   updated_at: string;
 };
@@ -133,14 +134,15 @@ function toMatch(r: MatchRow): Match {
     totalPrice: Number(r.total_price),
     data: JSON.parse(r.data),
     seen: Boolean(r.seen),
+    status: r.status ?? "new",
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
 
 /**
- * Guarda un resultado. Devuelve "new" si es nuevo, "cheaper" si ha bajado al menos un 5 %,
- * o null si ya lo conocíamos (para no repetir avisos).
+ * Guarda un resultado. change = "new" si es nuevo, "cheaper" si ha bajado al menos un 5 %,
+ * o null si ya lo conocíamos o lo has descartado/cogido (para no repetir avisos).
  */
 export async function upsertMatch(
   alertId: string,
@@ -148,21 +150,22 @@ export async function upsertMatch(
   dedupeKey: string,
   totalPrice: number,
   data: MatchData,
-): Promise<"new" | "cheaper" | null> {
-  const [existing] = await query<{ id: string; total_price: number }>(
-    "SELECT id, total_price FROM matches WHERE dedupe_key = ?",
+): Promise<{ id: string; change: "new" | "cheaper" | null }> {
+  const [existing] = await query<{ id: string; total_price: number; status: MatchStatus }>(
+    "SELECT id, total_price, status FROM matches WHERE dedupe_key = ?",
     [dedupeKey],
   );
   if (!existing) {
+    const id = randomUUID();
     await exec("INSERT INTO matches (id, alert_id, dedupe_key, kind, total_price, data) VALUES (?, ?, ?, ?, ?, ?)", [
-      randomUUID(),
+      id,
       alertId,
       dedupeKey,
       kind,
       totalPrice,
       JSON.stringify(data),
     ]);
-    return "new";
+    return { id, change: "new" };
   }
   const old = Number(existing.total_price);
   await exec("UPDATE matches SET total_price = ?, data = ?, updated_at = datetime('now') WHERE id = ?", [
@@ -170,11 +173,67 @@ export async function upsertMatch(
     JSON.stringify(data),
     existing.id,
   ]);
+  if (existing.status === "dismissed" || existing.status === "booked") return { id: existing.id, change: null };
   if (totalPrice <= old * 0.95) {
     await exec("UPDATE matches SET seen = 0 WHERE id = ?", [existing.id]);
-    return "cheaper";
+    return { id: existing.id, change: "cheaper" };
   }
-  return null;
+  return { id: existing.id, change: null };
+}
+
+/** Viajes (origen|destino|ida|vuelta) que ya has descartado o cogido: no se vuelven a ofrecer. */
+export async function decidedTrips(alertId: string): Promise<Set<string>> {
+  const rows = await query<{ dedupe_key: string }>(
+    "SELECT dedupe_key FROM matches WHERE alert_id = ? AND status IN ('dismissed', 'booked')",
+    [alertId],
+  );
+  return new Set(rows.map((r) => r.dedupe_key.split("|").slice(2).join("|")));
+}
+
+export type MatchWithAlert = Match & { alertName: string };
+
+async function userMatches(userId: string, where: string, args: (string | number)[], order: string, limit = 60): Promise<MatchWithAlert[]> {
+  const rows = await query<MatchRow & { config: string }>(
+    `SELECT m.*, a.config FROM matches m JOIN alerts a ON a.id = m.alert_id
+     WHERE a.user_id = ? AND ${where} ORDER BY ${order} LIMIT ?`,
+    [userId, ...args, limit],
+  );
+  return rows.map((r) => ({ ...toMatch(r), alertName: (JSON.parse(r.config) as AlertConfig).name }));
+}
+
+/** Ofertas pendientes de decidir, de todas tus alertas: lo más reciente primero. */
+export function inboxMatches(userId: string) {
+  return userMatches(userId, "m.status = 'new'", [], "m.seen ASC, m.updated_at DESC, m.total_price ASC");
+}
+
+export function savedMatches(userId: string) {
+  return userMatches(userId, "m.status IN ('saved', 'booked')", [], "m.status = 'booked' DESC, json_extract(m.data, '$.window.depart') ASC");
+}
+
+export async function getMatch(id: string, userId: string): Promise<Match | null> {
+  const [r] = await query<MatchRow>(
+    "SELECT m.* FROM matches m JOIN alerts a ON a.id = m.alert_id WHERE m.id = ? AND a.user_id = ?",
+    [id, userId],
+  );
+  return r ? toMatch(r) : null;
+}
+
+/**
+ * Decide sobre una oferta. Al cogerla, la alerta se pausa (ya tienes viaje); si deshaces, vuelve a buscar.
+ * Devuelve el id de la alerta, o null si la oferta no es tuya.
+ */
+export async function decideMatch(id: string, userId: string, status: MatchStatus): Promise<string | null> {
+  const m = await getMatch(id, userId);
+  if (!m) return null;
+  await exec("UPDATE matches SET status = ?, seen = 1 WHERE id = ?", [status, id]);
+  if (status === "booked") {
+    // Solo un viaje cogido por alerta.
+    await exec("UPDATE matches SET status = 'saved' WHERE alert_id = ? AND status = 'booked' AND id != ?", [m.alertId, id]);
+    await setAlertActive(m.alertId, userId, false);
+  } else if (m.status === "booked") {
+    await setAlertActive(m.alertId, userId, true);
+  }
+  return m.alertId;
 }
 
 export async function listMatches(alertId: string): Promise<Match[]> {
@@ -183,15 +242,6 @@ export async function listMatches(alertId: string): Promise<Match[]> {
     [alertId],
   );
   return rows.map(toMatch);
-}
-
-export async function latestMatches(userId: string, limit = 10): Promise<(Match & { alertName: string })[]> {
-  const rows = await query<MatchRow & { config: string }>(
-    `SELECT m.*, a.config FROM matches m JOIN alerts a ON a.id = m.alert_id
-     WHERE a.user_id = ? ORDER BY m.updated_at DESC LIMIT ?`,
-    [userId, limit],
-  );
-  return rows.map((r) => ({ ...toMatch(r), alertName: (JSON.parse(r.config) as AlertConfig).name }));
 }
 
 // Borra resultados caducados: viajes ya pasados u ofertas que no se han vuelto a ver en varias búsquedas.
@@ -206,7 +256,8 @@ export async function deleteSimulatedMatches(alertId: string) {
 export async function pruneMatches(alertId: string, staleHours: number) {
   const today = new Date().toISOString().slice(0, 10);
   await exec(
-    `DELETE FROM matches WHERE alert_id = ? AND (json_extract(data, '$.window.depart') <= ? OR updated_at < datetime('now', ?))`,
+    // Los guardados y descartados se conservan hasta la fecha del viaje (para recordarlos y no volver a ofrecerlos).
+    `DELETE FROM matches WHERE alert_id = ? AND status != 'booked' AND (json_extract(data, '$.window.depart') <= ? OR (status = 'new' AND updated_at < datetime('now', ?)))`,
     [alertId, today, `-${Math.round(staleHours)} hours`],
   );
 }

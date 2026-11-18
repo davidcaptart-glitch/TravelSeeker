@@ -13,7 +13,8 @@ if (VAPID_PUBLIC && VAPID_PRIVATE) {
 
 const mailer = process.env.SMTP_URL ? nodemailer.createTransport(process.env.SMTP_URL) : null;
 
-export type Notification = { title: string; body: string; path: string };
+// matchId: el aviso lleva botones "Guardar" y "Descartar" que actúan sobre esa oferta.
+export type Notification = { title: string; body: string; path: string; matchId?: string };
 
 /** Envía el aviso por todos los canales configurados. Devuelve cuántos se entregaron. */
 export async function notifyUser(userId: string, n: Notification): Promise<number> {

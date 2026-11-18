@@ -161,6 +161,9 @@ export type MatchData = {
   destinationLabel: string;
 };
 
+export const MATCH_STATUSES = ["new", "saved", "dismissed", "booked"] as const;
+export type MatchStatus = (typeof MATCH_STATUSES)[number];
+
 export type Match = {
   id: string;
   alertId: string;
@@ -168,6 +171,7 @@ export type Match = {
   totalPrice: number;
   data: MatchData;
   seen: boolean;
+  status: MatchStatus;
   createdAt: string;
   updatedAt: string;
 };
