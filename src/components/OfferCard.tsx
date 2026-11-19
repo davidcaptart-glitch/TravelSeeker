@@ -47,9 +47,12 @@ export function OfferCard({ m, index = 0 }: { m: MatchWithAlert; index?: number 
         </div>
         <div className="mt-3 flex min-w-0 items-center gap-2 text-xs text-muted">
           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 font-mono font-semibold text-foreground">
-            <Plane className="h-3 w-3" /> {flight.origin}→{flight.destination}
+            <Plane className="h-3 w-3" /> {flight.origin}→{flight.via?.length ? `${flight.via.join("/")}→` : ""}{flight.destination}
           </span>
-          <span className="shrink-0">{flight.stops === 0 ? "Directo" : `${flight.stops} escala${flight.stops > 1 ? "s" : ""}`}</span>
+          {flight.via?.length ? (
+            <span className="badge shrink-0 bg-accent-soft text-cyan">Combinado</span>
+          ) : null}
+          <span className={flight.via?.length ? "hidden" : "shrink-0"}>{flight.stops === 0 ? "Directo" : `${flight.stops} escala${flight.stops > 1 ? "s" : ""}`}</span>
           {hotel && (
             <span className="inline-flex min-w-0 items-center gap-1">
               <Bed className="h-3 w-3 shrink-0" /> <span className="truncate">{hotel.name}</span>
@@ -60,7 +63,7 @@ export function OfferCard({ m, index = 0 }: { m: MatchWithAlert; index?: number 
           </span>
         </div>
       </Link>
-      <MatchActions id={m.id} status={m.status} link={flight.link} />
+      <MatchActions id={m.id} status={m.status} link={flight.legs ? undefined : flight.link} />
       <p className="hint -mt-2 text-right">Precio comprobado {ago(m.updatedAt)}</p>
     </article>
   );

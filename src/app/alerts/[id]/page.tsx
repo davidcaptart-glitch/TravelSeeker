@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import Loading from "@/app/loading";
 import { AlertActions } from "@/components/AlertActions";
 import { GroundOptions, pickGround } from "@/components/GroundOptions";
+import { ComboLegs, airlineName } from "@/components/ComboLegs";
 import { MatchActions } from "@/components/MatchActions";
 import { StillSearching } from "@/components/OfferCard";
 import { PriceInsights } from "@/components/PriceInsights";
@@ -78,6 +79,9 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
       )}
 
       <div className="divide-y divide-border border-t border-border">
+        {flight.legs ? (
+          <ComboLegs flight={flight} />
+        ) : (
         <section className="flex items-start gap-3 p-4 sm:px-5">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-surface-2 text-muted">
             <Plane className="h-5 w-5" />
@@ -85,7 +89,7 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">
               <span className="font-mono">{flight.origin}</span> → <span className="font-mono">{flight.destination}</span>
-              {flight.airline ? ` · ${flight.airline}` : ""}
+              {flight.airline ? ` · ${airlineName(flight.airline)}` : ""}
             </p>
             <p className="hint">
               {flight.stops === 0 ? "Directo" : `${flight.stops} escala(s)`}
@@ -104,6 +108,7 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
             </a>
           )}
         </section>
+        )}
 
         <section className="space-y-3 p-4 sm:px-5">
           <div className="flex items-start gap-3">
@@ -175,7 +180,8 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
         </section>
       </div>
       <footer className="border-t border-border bg-surface-2/40 p-4 sm:px-5">
-        <MatchActions id={m.id} status={m.status} link={flight.link} />
+        {/* En un combinado se reserva tramo a tramo (arriba); aquí solo se marca. */}
+        <MatchActions id={m.id} status={m.status} link={flight.legs ? undefined : flight.link} />
       </footer>
     </article>
   );

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { BellRing, Bookmark, Palette, Radar, RefreshCw, Sparkles } from "lucide-react";
+import { Ban, BellRing, Bookmark, Moon, Palette, Plane, Radar, RefreshCw, Shuffle, Sparkles } from "lucide-react";
 
 /**
  * Novedades que ve el usuario al abrir la app después de una actualización.
@@ -14,6 +14,33 @@ export type Release = {
 };
 
 export const CHANGELOG: Release[] = [
+  {
+    id: "2026-11-19-combinados",
+    date: "2026-11-19",
+    title: "Vuelos combinados y más destinos baratos",
+    items: [
+      {
+        icon: Shuffle,
+        title: "Vuelos combinados",
+        text: "Probamos a enlazar dos vuelos por otra ciudad, por ejemplo Barcelona → Londres → Rovaniemi, y te lo proponemos si sale más barato que el vuelo normal. La ciudad la elegimos nosotros.",
+      },
+      {
+        icon: Moon,
+        title: "Con noche de paso si compensa",
+        text: "Si el segundo vuelo sale temprano, te proponemos salir la tarde anterior y te avisamos de que dormirás en la ciudad del enlace.",
+      },
+      {
+        icon: Plane,
+        title: "Más aerolíneas",
+        text: "Además de Ryanair buscamos en Norwegian, easyJet, Vueling, Wizz Air, Finnair, SAS y otras.",
+      },
+      {
+        icon: Ban,
+        title: "Excluir países en Sorpréndeme",
+        text: "Puedes quitar los países que no te interesen, por ejemplo España si solo quieres salir fuera.",
+      },
+    ],
+  },
   {
     id: "2026-11-18-rediseno",
     date: "2026-11-18",

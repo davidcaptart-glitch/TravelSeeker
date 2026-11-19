@@ -25,6 +25,8 @@ export const alertConfigSchema = z.object({
       kind: z.literal("anywhere"),
       themes: z.array(z.enum(DESTINATION_THEMES)).default([]),
       countries: z.array(z.string().length(2)).default([]),
+      // Países que nunca deben salir como destino (p. ej. el tuyo).
+      excludeCountries: z.array(z.string().length(2)).default([]),
     }),
   ]),
   // Aeropuertos de llegada elegidos. Vacío = automático (cercanos al destino).
@@ -49,6 +51,8 @@ export const alertConfigSchema = z.object({
     maxStops: z.number().int().min(0).max(2).default(1),
     passengers: z.number().int().min(1).max(9).default(1),
     maxDurationHours: z.number().positive().optional(),
+    // Probar también dos vuelos de solo ida enlazados en otra ciudad (la app elige cuál) si sale más barato.
+    selfTransfer: z.boolean().optional(), // sin valor = sí
   }),
   hotel: z
     .object({
@@ -88,6 +92,23 @@ export type TripWindow = {
   workdaysUsed: number;
 };
 
+/** Un tramo de solo ida dentro de un viaje combinado (billete propio). */
+export type FlightLeg = {
+  provider: string;
+  airline: string;
+  from: string;
+  to: string;
+  date: string;
+  departTime: string;
+  arriveTime?: string;
+  arriveDate?: string;
+  // Hora de llegada calculada (salida + duración), no la del horario.
+  estimated?: boolean;
+  price: number;
+  stops: number;
+  link?: string;
+};
+
 export type FlightOffer = {
   provider: string;
   cached: boolean;
@@ -102,6 +123,9 @@ export type FlightOffer = {
   departTime?: string;
   arriveTime?: string;
   link?: string;
+  // Viaje combinado: billetes separados y ciudades donde se enlaza.
+  legs?: FlightLeg[];
+  via?: string[];
 };
 
 export type HotelOffer = {
@@ -185,6 +209,8 @@ export type RunSummary = {
   flightMatches: number;
   fullMatches: number;
   notified: number;
+  // Combinaciones de dos vuelos que salían más baratas que el vuelo normal.
+  combos?: number;
   groundOnly?: GroundOption;
   // Todas las alternativas por tierra (la más rápida es groundOnly).
   groundOnlyOptions?: GroundOption[];

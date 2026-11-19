@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Bed, Building2, Check, ChevronDown, Compass, Home, Hotel, Loader2, MapPin, Minus, Plane, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bed, Building2, Check, ChevronDown, Compass, Home, Hotel, Loader2, MapPin, Minus, Plane, Plus, X } from "lucide-react";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { saveAlert, type FormState } from "@/app/actions";
 import { formatDate, generateWindows } from "@/lib/dates";
 import { eur, monthLabel, STOPS_LABEL } from "@/lib/format";
+import { countryName, SURPRISE_COUNTRIES } from "@/lib/countries";
 import { DESTINATION_THEMES, HOTEL_TYPES, parseTripadvisorGeo, type AlertConfig, type Place } from "@/lib/types";
 import { AirportMultiPicker, DateList, NearbyAirports, PlacePicker } from "./pickers";
 
@@ -12,7 +13,8 @@ type Draft = Omit<AlertConfig, "destination" | "hotel"> & {
   destKind: "place" | "anywhere";
   place?: Place;
   themes: (typeof DESTINATION_THEMES)[number][];
-  countries: string;
+  countries: string[];
+  excludeCountries: string[];
   hotelOn: boolean;
   hotel: NonNullable<AlertConfig["hotel"]>;
 };
@@ -30,7 +32,8 @@ function fromConfig(today: string, c?: AlertConfig): Draft {
     destKind: c?.destination.kind ?? "place",
     place: c?.destination.kind === "place" ? c.destination.place : undefined,
     themes: c?.destination.kind === "anywhere" ? c.destination.themes : [],
-    countries: c?.destination.kind === "anywhere" ? c.destination.countries.join(", ") : "",
+    countries: c?.destination.kind === "anywhere" ? c.destination.countries : [],
+    excludeCountries: c?.destination.kind === "anywhere" ? (c.destination.excludeCountries ?? []) : [],
     destinationAirports: c?.destinationAirports ?? [],
     airportRadiusKm: c?.airportRadiusKm ?? 150,
     allowGround: c?.allowGround ?? false,
@@ -73,10 +76,8 @@ function toConfig(d: Draft): AlertConfig {
         : {
             kind: "anywhere",
             themes: d.themes,
-            countries: d.countries
-              .split(/[,\s]+/)
-              .map((s) => s.trim().toUpperCase())
-              .filter((s) => /^[A-Z]{2}$/.test(s)),
+            countries: d.countries,
+            excludeCountries: d.excludeCountries.filter((c) => !d.countries.includes(c)),
           },
     destinationAirports: d.destKind === "place" ? d.destinationAirports : [],
     airportRadiusKm: d.airportRadiusKm,
@@ -110,6 +111,68 @@ const STEPS = [
 ] as const;
 
 /* ---------- Controles ---------- */
+
+/** Elegir países por su nombre: los elegidos salen como chips que se quitan con la ✕. */
+function CountryPicker({
+  id,
+  value,
+  onChange,
+  placeholder,
+  suggest,
+}: {
+  id: string;
+  value: string[];
+  onChange: (v: string[]) => void;
+  placeholder: string;
+  suggest?: string;
+}) {
+  const options = useMemo(
+    () => ([...SURPRISE_COUNTRIES] as string[]).sort((a, b) => countryName(a).localeCompare(countryName(b), "es")),
+    [],
+  );
+  const free = options.filter((c) => !value.includes(c));
+  return (
+    <div className="space-y-2">
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {value.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className="chip chip-on"
+              aria-label={`Quitar ${countryName(c)}`}
+              onClick={() => onChange(value.filter((x) => x !== c))}
+            >
+              {countryName(c)}
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          id={id}
+          className="input min-w-0 flex-1"
+          value=""
+          onChange={(e) => e.target.value && onChange([...value, e.target.value])}
+        >
+          <option value="">{placeholder}</option>
+          {free.map((c) => (
+            <option key={c} value={c}>
+              {countryName(c)}
+            </option>
+          ))}
+        </select>
+        {suggest && free.includes(suggest) && (
+          <button type="button" className="chip" onClick={() => onChange([...value, suggest])}>
+            <Plus className="h-3.5 w-3.5" />
+            {countryName(suggest)}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function Block({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -604,15 +667,33 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                     <p className="hint mt-2">Sin marcar ninguno = cualquier destino.</p>
                   </div>
                   <div>
+                    <label className="label" htmlFor="exclude-countries">
+                      Excluir países
+                    </label>
+                    <CountryPicker
+                      id="exclude-countries"
+                      value={d.excludeCountries}
+                      onChange={(v) => {
+                        set("excludeCountries", v);
+                        set("countries", d.countries.filter((c) => !v.includes(c)));
+                      }}
+                      placeholder="Añadir país a excluir…"
+                      suggest="ES"
+                    />
+                    <p className="hint mt-2">Nunca te propondrá viajes a estos países. Por ejemplo, España si solo quieres salir fuera.</p>
+                  </div>
+                  <div>
                     <label className="label" htmlFor="countries">
                       Solo estos países (opcional)
                     </label>
-                    <input
+                    <CountryPicker
                       id="countries"
-                      className="input"
                       value={d.countries}
-                      onChange={(e) => set("countries", e.target.value)}
-                      placeholder="FR, IT, PT"
+                      onChange={(v) => {
+                        set("countries", v);
+                        set("excludeCountries", d.excludeCountries.filter((c) => !v.includes(c)));
+                      }}
+                      placeholder="Cualquier país"
                     />
                   </div>
                 </div>
@@ -729,6 +810,16 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                   ]}
                 />
               </div>
+              {d.destKind === "place" && (
+                <div className="rounded-2xl bg-surface-2/60 p-3">
+                  <Switch
+                    checked={d.flight.selfTransfer !== false}
+                    onChange={(v) => setFlight({ selfTransfer: v })}
+                    label="Buscar también vuelos combinados"
+                    hint="Probamos a enlazar dos vuelos en otra ciudad (p. ej. Barcelona → Bérgamo → Rovaniemi) y te lo proponemos si sale más barato. La ciudad la elegimos nosotros."
+                  />
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <Stepper
                   label="Viajeros"

@@ -1,8 +1,10 @@
 import { formatDate, generateWindows, monthsOf } from "./dates";
 import { minutes } from "./format";
 import { getAirport, haversineKm, nearbyAirports, THEMED_DESTINATIONS } from "./geo";
+import { CITY_CODE_COUNTRY } from "./countries";
 import { getHolidays } from "./holidays";
 import { notifyUser } from "./notify";
+import { findCombos } from "./providers/combos";
 import { confirm, flightProviders, monthlyTrend, screen } from "./providers/flights";
 import { groundOptions, lastMile } from "./providers/ground";
 import { searchHotels } from "./providers/hotels";
@@ -53,7 +55,11 @@ function anywhereSet(alert: Alert): Set<string> | null {
   if (d.kind !== "anywhere") return null;
   const themes = d.themes.length ? d.themes : [];
   let codes = themes.length ? themes.flatMap((t) => THEMED_DESTINATIONS[t] ?? []) : Object.values(THEMED_DESTINATIONS).flat();
-  if (d.countries.length) codes = codes.filter((c) => d.countries.includes(getAirport(c)?.country ?? ""));
+  const countryOf = (code: string) => getAirport(code)?.country ?? CITY_CODE_COUNTRY[code] ?? "";
+  const only = d.countries ?? [];
+  const excluded = d.excludeCountries ?? []; // las alertas guardadas antes no lo tienen
+  if (only.length) codes = codes.filter((c) => only.includes(countryOf(c)));
+  if (excluded.length) codes = codes.filter((c) => !excluded.includes(countryOf(c)));
   return new Set(codes);
 }
 
@@ -67,7 +73,9 @@ function destinationPlace(alert: Alert, offer: FlightOffer): Place {
 function flightOk(o: FlightOffer, alert: Alert, tolerance = 1): boolean {
   const f = alert.config.flight;
   if (o.price && o.price > f.maxPrice * tolerance) return false;
-  if (o.stops > f.maxStops) return false;
+  // En un combinado, la escala propia no cuenta: se mira cada tramo por separado.
+  const stops = o.legs ? Math.max(...o.legs.map((l) => l.stops)) : o.stops;
+  if (stops > f.maxStops) return false;
   if (f.maxDurationHours && o.durationMinutes && o.durationMinutes > f.maxDurationHours * 60) return false;
   return true;
 }
@@ -106,6 +114,7 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
   const dests = destinationAirports(alert);
   const anyCodes = anywhereSet(alert);
   if (dests && !dests.length) notes.push("No hay aeropuertos cerca del destino: amplía el radio o activa rutas alternativas.");
+  if (anyCodes && !anyCodes.size) notes.push("Con esos países y temas no queda ningún destino sorpresa: quita algún país excluido o algún filtro.");
   const raw: FlightOffer[] = [];
   const targetPlace = c.destination.kind === "place" ? c.destination.place : null;
   const uncovered: string[] = [];
@@ -138,6 +147,7 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
 
   const best = new Map<string, FlightOffer>();
   for (const o of raw) {
+    if (anyCodes && !anyCodes.has(o.destination)) continue;
     // Fechas parecidas (mismos meses y noches, cualquier día de la semana): para saber si tu precio es realista.
     const nights = Math.round((Date.parse(o.ret) - Date.parse(o.depart)) / 86_400_000);
     if (
@@ -151,7 +161,6 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
       summary.cheapestSimilar = Math.min(summary.cheapestSimilar ?? Infinity, o.price);
     }
     if (!windowByKey.has(`${o.depart}_${o.ret}`)) continue;
-    if (anyCodes && anyCodes.size && !anyCodes.has(o.destination)) continue;
     // Para el histórico: lo más barato en tus fechas aunque supere tu precio (sí respeta las escalas).
     if (o.destination !== o.origin && o.stops <= c.flight.maxStops && o.price > 0) {
       summary.cheapestForDates = Math.min(summary.cheapestForDates ?? Infinity, o.price);
@@ -161,6 +170,33 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
     const prev = best.get(k);
     if (!prev || o.price < prev.price) best.set(k, o);
   }
+  // Vuelos combinados: dos billetes enlazados en otra ciudad que elige la app, si salen más baratos.
+  if (c.flight.selfTransfer !== false && dests?.length) {
+    try {
+      const combos = await findCombos({
+        origins: c.origins,
+        destinations: dests,
+        windows,
+        adults: c.flight.passengers,
+        maxStops: c.flight.maxStops,
+        maxPrice: c.flight.maxPrice,
+      });
+      let added = 0;
+      for (const o of combos) {
+        if (!flightOk(o, alert, SCREEN_TOLERANCE)) continue;
+        const k = `${o.origin}|${o.destination}|${o.depart}|${o.ret}`;
+        const direct = best.get(k);
+        // Solo si ahorra de verdad frente al vuelo normal de esas fechas (al menos un 10 %).
+        if (direct && o.price > direct.price * 0.9) continue;
+        best.set(`${k}|via:${o.via!.join("+")}`, o);
+        added++;
+      }
+      summary.combos = added;
+    } catch (err) {
+      notes.push(`Vuelos combinados: ${(err as Error).message}`);
+    }
+  }
+
   // Lo que ya has descartado o cogido no se vuelve a confirmar ni a ofrecer: deja sitio a otras opciones.
   const decided = await decidedTrips(alert.id);
   for (const k of best.keys()) if (decided.has(k)) best.delete(k);
@@ -174,6 +210,11 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
   let bestTotal = Infinity;
   for (const cand of candidates.slice(0, MAX_CANDIDATES)) {
     if (confirmed.length >= MAX_MATCHES_PER_RUN * 2) break;
+    // Los combinados ya traen el precio de cada tramo (Ryanair real; el resto, en caché).
+    if (cand.legs) {
+      if (flightOk(cand, alert)) confirmed.push(cand);
+      continue;
+    }
     try {
       const r = await confirm(cand, {
         maxStops: c.flight.maxStops,
@@ -231,7 +272,8 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
     if (kind === "full") summary.fullMatches++;
     summary.flightMatches++;
     const total = flight.price * c.flight.passengers + (data.hotel?.total ?? 0);
-    const key = `${alert.id}|${kind}|${flight.origin}|${flight.destination}|${flight.depart}|${flight.ret}`;
+    const viaKey = flight.via?.length ? `|via:${flight.via.join("+")}` : "";
+    const key = `${alert.id}|${kind}|${flight.origin}|${flight.destination}|${flight.depart}|${flight.ret}${viaKey}`;
     const { id: matchId, change } = await upsertMatch(alert.id, kind, key, total, data);
     bestTotal = Math.min(bestTotal, total);
 
@@ -241,7 +283,8 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
       const hotelTxt = data.hotel ? ` + ${data.hotel.name} ${Math.round(data.hotel.total)} €` : "";
       const ground = data.lastMile?.options.reduce((a, b) => (b.cost < a.cost ? b : a), data.lastMile.options[0]);
       const groundTxt = ground ? ` Del aeropuerto: ${ground.label} (${minutes(ground.minutes)}, ~${Math.round(ground.cost)} €).` : "";
-      const text = `${flight.origin}→${flight.destination} ${when}: vuelo ${flight.price} €/pers${hotelTxt}. Total ${Math.round(total)} €.${groundTxt}`;
+      const route = flight.via?.length ? `${flight.origin}→${flight.via.join("/")}→${flight.destination} (vuelos combinados)` : `${flight.origin}→${flight.destination}`;
+      const text = `${route} ${when}: vuelo ${flight.price} €/pers${hotelTxt}. Total ${Math.round(total)} €.${groundTxt}`;
       fresh.push({ id: matchId, change, total, text });
     }
   }
