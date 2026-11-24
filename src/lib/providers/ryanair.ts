@@ -50,6 +50,7 @@ function toOffer(f: RyrFare, adults: number): FlightOffer {
     airline: "Ryanair",
     departTime: out.departureDate.slice(11, 16),
     arriveTime: out.arrivalDate.slice(11, 16),
+    returnTime: back.departureDate.slice(11, 16),
     link: bookingLink(out.departureAirport.iataCode, out.arrivalAirport.iataCode, depart, ret, adults),
   };
 }

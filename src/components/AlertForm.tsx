@@ -1,9 +1,9 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Bed, Building2, Check, ChevronDown, Compass, Home, Hotel, Loader2, MapPin, Minus, Plane, Plus, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bed, Building2, CalendarRange, Check, ChevronDown, Compass, Home, Hotel, Loader2, MapPin, Minus, Plane, Plus, Trash2, X } from "lucide-react";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { saveAlert, type FormState } from "@/app/actions";
-import { formatDate, generateWindows } from "@/lib/dates";
+import { addDays, formatDate, generateWindows, monthsOfRanges } from "@/lib/dates";
 import { eur, monthLabel, STOPS_LABEL } from "@/lib/format";
 import { countryName, SURPRISE_COUNTRIES } from "@/lib/countries";
 import { DESTINATION_THEMES, HOTEL_TYPES, parseTripadvisorGeo, type AlertConfig, type Place } from "@/lib/types";
@@ -65,7 +65,7 @@ function suggestedName(d: Draft): string {
   return d.themes.length ? `Sorpresa de ${d.themes.join(" y ")}` : "Sorpréndeme";
 }
 
-function toConfig(d: Draft): AlertConfig {
+function toConfig(d: Draft, dates: AlertConfig["dates"]): AlertConfig {
   return {
     name: (d.name.trim() || suggestedName(d)).slice(0, 80),
     notifyMode: d.notifyMode,
@@ -84,7 +84,7 @@ function toConfig(d: Draft): AlertConfig {
     allowGround: d.allowGround,
     maxGroundMinutes: d.maxGroundMinutes,
     groundFrom: d.allowGround ? d.groundFrom : undefined,
-    dates: d.dates,
+    dates,
     flight: d.flight,
     hotel: d.hotelOn
       ? {
@@ -199,6 +199,146 @@ function Switch({ checked, onChange, label, hint }: { checked: boolean; onChange
         className="relative h-7 w-12 shrink-0 rounded-full bg-border transition peer-checked:bg-accent peer-focus-visible:ring-4 peer-focus-visible:ring-accent/25 after:absolute after:top-1 after:left-1 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition peer-checked:after:translate-x-5"
       />
     </label>
+  );
+}
+
+type DateRange = NonNullable<AlertConfig["dates"]["ranges"]>[number];
+type Times = NonNullable<AlertConfig["dates"]["times"]>;
+
+/** Próximo viernes → domingo, como primer rango de ejemplo. */
+function nextWeekend(today: string): DateRange {
+  let d = addDays(today, 1);
+  while (new Date(`${d}T00:00:00Z`).getUTCDay() !== 5) d = addDays(d, 1);
+  return { from: d, to: addDays(d, 2), departAfter: "16:00" };
+}
+
+function TimeInput({ value, onChange, label, id }: { value?: string; onChange: (v?: string) => void; label: string; id: string }) {
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      <input
+        id={id}
+        type="time"
+        className="input min-w-0 flex-1 px-3"
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value || undefined)}
+        aria-label={label}
+      />
+      <button
+        type="button"
+        className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted hover:bg-surface-3 hover:text-foreground ${value ? "" : "invisible"}`}
+        onClick={() => onChange(undefined)}
+        aria-label={`Quitar ${label}`}
+        tabIndex={value ? 0 : -1}
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+/** Rangos de días concretos: "libre desde el viernes 17:00 hasta el domingo 22:00". Se pueden añadir varios. */
+function RangeEditor({ value, onChange, today }: { value: DateRange[]; onChange: (v: DateRange[]) => void; today: string }) {
+  const set = (i: number, patch: Partial<DateRange>) =>
+    onChange(
+      value.map((r, j) => {
+        if (j !== i) return r;
+        const n = { ...r, ...patch };
+        // El final nunca antes que el principio.
+        if (n.to < n.from) n.to = n.from;
+        return n;
+      }),
+    );
+  const min = addDays(today, 1);
+  return (
+    <div className="space-y-3">
+      {value.map((r, i) => (
+        <div key={i} className="rounded-2xl bg-surface-2/60 p-3" style={{ boxShadow: "inset 0 0 0 1px var(--hairline)" }}>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-semibold">
+              <CalendarRange className="mr-1.5 inline h-4 w-4 text-cyan" />
+              {value.length > 1 ? `Rango ${i + 1}` : "Tus días"}
+            </p>
+            {value.length > 1 && (
+              <button type="button" className="btn-quiet min-h-8 px-2 text-xs" onClick={() => onChange(value.filter((_, j) => j !== i))}>
+                <Trash2 className="h-3.5 w-3.5" /> Quitar
+              </button>
+            )}
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="label mb-0" htmlFor={`from-${i}`}>
+                Desde
+              </label>
+              <input id={`from-${i}`} type="date" className="input" min={min} value={r.from} onChange={(e) => e.target.value && set(i, { from: e.target.value })} />
+              <div className="flex items-center gap-2">
+                <span className="hint flex-1">No salir antes de las</span>
+                <div className="w-44 shrink-0">
+                  <TimeInput id={`from-time-${i}`} label="hora mínima de salida" value={r.departAfter} onChange={(v) => set(i, { departAfter: v })} />
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="label mb-0" htmlFor={`to-${i}`}>
+                Hasta
+              </label>
+              <input id={`to-${i}`} type="date" className="input" min={r.from} value={r.to} onChange={(e) => e.target.value && set(i, { to: e.target.value })} />
+              <div className="flex items-center gap-2">
+                <span className="hint flex-1">Vuelta como tarde a las</span>
+                <div className="w-44 shrink-0">
+                  <TimeInput id={`to-time-${i}`} label="hora límite del vuelo de vuelta" value={r.returnBy} onChange={(v) => set(i, { returnBy: v })} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="btn-ghost w-full"
+        onClick={() => {
+          const last = value.at(-1);
+          onChange([...value, last ? { from: addDays(last.from, 7), to: addDays(last.to, 7), departAfter: last.departAfter, returnBy: last.returnBy } : nextWeekend(today)]);
+        }}
+      >
+        <Plus className="h-4 w-4" /> Añadir otro rango de días
+      </button>
+    </div>
+  );
+}
+
+const TIME_PRESETS: { label: string; patch: Times }[] = [
+  { label: "Sin madrugones", patch: { outFrom: "08:00", backFrom: "08:00" } },
+  { label: "Ida después del trabajo", patch: { outFrom: "17:00" } },
+  { label: "Vuelta por la tarde", patch: { backFrom: "15:00" } },
+];
+
+function TimesEditor({ value, onChange }: { value: Times; onChange: (v: Times) => void }) {
+  const set = (patch: Times) => onChange({ ...value, ...patch });
+  const row = (title: string, from: "outFrom" | "backFrom", to: "outTo" | "backTo") => (
+    <div>
+      <p className="label">{title}</p>
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+        <TimeInput id={from} label={`${title}: desde`} value={value[from]} onChange={(v) => set({ [from]: v })} />
+        <span className="text-sm text-muted">a</span>
+        <TimeInput id={to} label={`${title}: hasta`} value={value[to]} onChange={(v) => set({ [to]: v })} />
+      </div>
+    </div>
+  );
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {TIME_PRESETS.map((p) => (
+          <button key={p.label} type="button" className="chip" onClick={() => set(p.patch)}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {row("Salida de la ida", "outFrom", "outTo")}
+        {row("Salida de la vuelta", "backFrom", "backTo")}
+      </div>
+      <p className="hint">Deja en blanco lo que te dé igual. Si una aerolínea no da la hora, el vuelo no se descarta.</p>
+    </div>
   );
 }
 
@@ -482,8 +622,20 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
   // Texto tal cual lo pega el usuario (enlace o código); en la alerta se guarda solo el código.
   const [taText, setTaText] = useState(d.hotel.tripadvisorGeo ?? "");
 
+  // Por meses o por días concretos (rangos). Los meses de la alerta se sacan de los rangos.
+  const [dateMode, setDateMode] = useState<"months" | "ranges">(d.dates.ranges?.length ? "ranges" : "months");
+  const [timesOn, setTimesOn] = useState(Boolean(d.dates.times && Object.values(d.dates.times).some(Boolean)));
+  const dates = useMemo<AlertConfig["dates"]>(() => {
+    const times = timesOn && d.dates.times && Object.values(d.dates.times).some(Boolean) ? d.dates.times : undefined;
+    if (dateMode === "ranges") {
+      const ranges = (d.dates.ranges ?? []).filter((r) => r.from && r.to && r.to >= r.from);
+      return { ...d.dates, ranges, times, months: monthsOfRanges(ranges) };
+    }
+    return { ...d.dates, ranges: undefined, times };
+  }, [d.dates, dateMode, timesOn]);
+
   // Festivos del usuario para previsualizar las fechas exactas que se buscarán.
-  const years = [...new Set(d.dates.months.map((m) => m.slice(0, 4)))].join(",");
+  const years = [...new Set(dates.months.map((m) => m.slice(0, 4)))].join(",");
   const [holidays, setHolidays] = useState<string[]>([]);
   useEffect(() => {
     if (!years) return;
@@ -492,17 +644,21 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
       .then((j: { dates: string[] }) => setHolidays(j.dates))
       .catch(() => {});
   }, [years]);
-  const windows = useMemo(() => generateWindows(d.dates, new Set(d.dates.useHolidays ? holidays : []), today), [d.dates, holidays, today]);
+  const windows = useMemo(() => generateWindows(dates, new Set(dates.useHolidays ? holidays : []), today), [dates, holidays, today]);
 
   const stepOk = [
     d.origins.length > 0 && (d.destKind === "anywhere" || Boolean(d.place)),
-    d.dates.months.length > 0 && windows.length > 0,
+    dates.months.length > 0 && windows.length > 0,
     d.flight.maxPrice > 0 && (!d.hotelOn || d.hotel.types.length > 0),
     true,
   ];
   const missing = [
     !d.origins.length ? "Elige al menos un aeropuerto de salida." : "Elige un destino o «Sorpréndeme».",
-    !d.dates.months.length ? "Elige al menos un mes." : "Con estas condiciones no hay ninguna fecha posible.",
+    !dates.months.length
+      ? dateMode === "ranges"
+        ? "Añade al menos un rango de días."
+        : "Elige al menos un mes."
+      : "Con estas condiciones no hay ninguna fecha posible.",
     "Indica un precio y algún tipo de alojamiento.",
     "",
   ];
@@ -525,7 +681,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
       }}
     >
       {id && <input type="hidden" name="id" value={id} />}
-      <input type="hidden" name="config" value={JSON.stringify(ready ? toConfig(d) : {})} />
+      <input type="hidden" name="config" value={JSON.stringify(ready ? toConfig(d, dates) : {})} />
 
       {/* Progreso */}
       <nav aria-label="Pasos" className="space-y-3">
@@ -704,11 +860,31 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
 
         {step === 1 && (
           <>
-            <Block title="Meses" hint="Elige el año y toca los meses en los que podrías ir. Puedes mezclar meses de varios años.">
-              <MonthPicker today={today} value={d.dates.months} onChange={(months) => setDates({ months })} />
-            </Block>
+            <Segmented
+              label="Cómo eliges las fechas"
+              value={dateMode}
+              onChange={(v) => {
+                setDateMode(v);
+                if (v === "ranges" && !d.dates.ranges?.length) setDates({ ranges: [nextWeekend(today)] });
+              }}
+              options={[
+                ["months", "Por meses"],
+                ["ranges", "Días concretos"],
+              ]}
+            />
 
-            <Block title="Tus días libres">
+            {dateMode === "ranges" ? (
+              <Block title="Días concretos" hint="Pon los días en que estás libre, con la hora si quieres afinar. Puedes añadir varios rangos.">
+                <RangeEditor value={d.dates.ranges ?? []} onChange={(ranges) => setDates({ ranges })} today={today} />
+              </Block>
+            ) : (
+              <Block title="Meses" hint="Elige el año y toca los meses en los que podrías ir. Puedes mezclar meses de varios años.">
+                <MonthPicker today={today} value={d.dates.months} onChange={(months) => setDates({ months })} />
+              </Block>
+            )}
+
+            <Block title={dateMode === "ranges" ? "Noches" : "Tus días libres"}>
+              {dateMode === "months" && (
               <div className="divide-y divide-border">
                 <div className="pb-2">
                   <Switch checked={d.dates.weekendsOnly} onChange={(v) => setDates({ weekendsOnly: v })} label="Solo fines de semana y puentes" />
@@ -730,6 +906,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                   />
                 </div>
               </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <Stepper
                   label="Noches mínimas"
@@ -746,6 +923,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                   onChange={(v) => setDates({ maxNights: v })}
                 />
               </div>
+              {dateMode === "months" && (
               <More label="Días de vacaciones y días que no puedes">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
@@ -759,6 +937,19 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                   </div>
                 </div>
               </More>
+              )}
+            </Block>
+
+            <Block title="Horarios" hint="Opcional: a qué horas te va bien que salgan los vuelos.">
+              <Switch
+                checked={timesOn}
+                onChange={(v) => {
+                  setTimesOn(v);
+                  if (v && !d.dates.times) setDates({ times: {} });
+                }}
+                label="Elegir horas de salida"
+              />
+              {timesOn && <TimesEditor value={d.dates.times ?? {}} onChange={(times) => setDates({ times })} />}
             </Block>
 
             <section className={`rounded-3xl p-4 ${windows.length ? "bg-good-soft" : "bg-warn-soft"}`} aria-live="polite">
@@ -780,7 +971,11 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                   </div>
                 </details>
               ) : (
-                <p className="text-sm text-muted">Añade meses, permite días sueltos o cambia las noches.</p>
+                <p className="text-sm text-muted">
+                  {dateMode === "ranges"
+                    ? "Revisa que cada rango tenga al menos tantos días como las noches mínimas."
+                    : "Añade meses, permite días sueltos o cambia las noches."}
+                </p>
               )}
             </section>
           </>
@@ -1053,7 +1248,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                     [
                       1,
                       "Fechas",
-                      `${d.dates.months.map(monthLabel).join(", ")} · ${d.dates.minNights}-${d.dates.maxNights} noches · ${windows.length} combinaciones`,
+                      `${dateMode === "ranges" ? `${dates.ranges?.length ?? 0} rango(s) de días` : dates.months.map(monthLabel).join(", ")} · ${d.dates.minNights}-${d.dates.maxNights} noches${dates.times ? " · con horarios" : ""} · ${windows.length} combinaciones`,
                     ],
                     [
                       2,

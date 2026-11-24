@@ -10,7 +10,7 @@ import { groundOptions, lastMile } from "./providers/ground";
 import { searchHotels } from "./providers/hotels";
 import { ALLOW_MOCK } from "./providers/mock";
 import { addPricePoint, decidedTrips, deleteSimulatedMatches, dueAlerts, ensureUser, pruneMatches, saveRun, upsertMatch } from "./repo";
-import type { Alert, FlightOffer, MatchData, Place, RunSummary } from "./types";
+import type { Alert, AlertConfig, FlightOffer, MatchData, Place, RunSummary, TripWindow } from "./types";
 
 // Búsquedas de pago (SerpApi) por ejecución; las de Ryanair no cuentan.
 const CONFIRM_PER_RUN = Number(process.env.CONFIRM_PER_RUN ?? 4);
@@ -77,6 +77,28 @@ function flightOk(o: FlightOffer, alert: Alert, tolerance = 1): boolean {
   const stops = o.legs ? Math.max(...o.legs.map((l) => l.stops)) : o.stops;
   if (stops > f.maxStops) return false;
   if (f.maxDurationHours && o.durationMinutes && o.durationMinutes > f.maxDurationHours * 60) return false;
+  return true;
+}
+
+/**
+ * Horarios: franjas de salida de la ida y de la vuelta, y los límites de un rango de días concretos.
+ * Si no se conoce la hora de un vuelo (algunas fuentes no la dan) no se descarta.
+ */
+function timesOk(o: FlightOffer, w: TripWindow | undefined, t: AlertConfig["dates"]["times"]): boolean {
+  const legs = o.legs;
+  const split = legs ? legs.findIndex((l) => l.to === o.destination) + 1 : 0;
+  const out = legs ? { date: legs[0].date, time: legs[0].departTime } : { date: o.depart, time: o.departTime };
+  const back = legs ? { date: legs[split]?.date ?? o.ret, time: legs[split]?.departTime } : { date: o.ret, time: o.returnTime };
+  const inBand = (time?: string, from?: string, to?: string) => !time || ((!from || time >= from) && (!to || time <= to));
+  if (!inBand(out.time, t?.outFrom, t?.outTo) || !inBand(back.time, t?.backFrom, t?.backTo)) return false;
+  if (w?.earliest) {
+    const [d, h] = w.earliest.split("T");
+    if (out.date < d || (out.date === d && out.time && out.time < h)) return false;
+  }
+  if (w?.latestReturn) {
+    const [d, h] = w.latestReturn.split("T");
+    if (back.date > d || (back.date === d && back.time && back.time > h)) return false;
+  }
   return true;
 }
 
@@ -166,6 +188,7 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
       summary.cheapestForDates = Math.min(summary.cheapestForDates ?? Infinity, o.price);
     }
     if (o.destination === o.origin || !flightOk(o, alert, SCREEN_TOLERANCE)) continue;
+    if (!timesOk(o, windowByKey.get(`${o.depart}_${o.ret}`), c.dates.times)) continue;
     const k = `${o.origin}|${o.destination}|${o.depart}|${o.ret}`;
     const prev = best.get(k);
     if (!prev || o.price < prev.price) best.set(k, o);
@@ -184,6 +207,7 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
       let added = 0;
       for (const o of combos) {
         if (!flightOk(o, alert, SCREEN_TOLERANCE)) continue;
+        if (!timesOk(o, windowByKey.get(`${o.depart}_${o.ret}`), c.dates.times)) continue;
         const k = `${o.origin}|${o.destination}|${o.depart}|${o.ret}`;
         const direct = best.get(k);
         // Solo si ahorra de verdad frente al vuelo normal de esas fechas (al menos un 10 %).
@@ -229,7 +253,9 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
       if (r.skipped) continue;
       if (r.paid) paid++;
       summary.confirmed++;
-      if (r.offer && flightOk(r.offer, alert)) confirmed.push(r.offer);
+      if (r.offer && flightOk(r.offer, alert) && timesOk(r.offer, windowByKey.get(`${r.offer.depart}_${r.offer.ret}`), c.dates.times)) {
+        confirmed.push(r.offer);
+      }
     } catch (err) {
       notes.push(`Confirmación ${cand.origin}→${cand.destination}: ${(err as Error).message}`);
     }

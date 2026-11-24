@@ -53,13 +53,29 @@ export function generateWindows(
   };
 
   const out = new Map<string, TripWindow>();
-  const push = (depart: string, ret: string, eveningStart: boolean) => {
+  const push = (depart: string, ret: string, eveningStart: boolean, limits: Pick<TripWindow, "earliest" | "latestReturn"> = {}) => {
     const nights = diffDays(depart, ret);
     if (nights < dates.minNights || nights > dates.maxNights) return;
     if (depart <= today || excluded.has(depart) || excluded.has(ret)) return;
     const key = `${depart}_${ret}`;
-    if (!out.has(key)) out.set(key, { depart, ret, nights, workdaysUsed: workdays(depart, ret, eveningStart) });
+    if (!out.has(key)) out.set(key, { depart, ret, nights, workdaysUsed: workdays(depart, ret, eveningStart), ...limits });
   };
+
+  // Días concretos: cualquier ida y vuelta dentro de cada rango, respetando la hora del primer y del último día.
+  if (dates.ranges?.length) {
+    for (const r of dates.ranges) {
+      if (r.to < r.from) continue;
+      for (let d = r.from; d <= r.to; d = addDays(d, 1)) {
+        for (let n = dates.minNights; n <= dates.maxNights; n++) {
+          const ret = addDays(d, n);
+          if (ret > r.to) break;
+          // Límites del rango (también para vuelos combinados que salgan la tarde anterior).
+          push(d, ret, false, { earliest: `${r.from}T${r.departAfter ?? "00:00"}`, latestReturn: `${r.to}T${r.returnBy ?? "23:59"}` });
+        }
+      }
+    }
+    return [...out.values()].sort((a, b) => a.depart.localeCompare(b.depart) || a.nights - b.nights);
+  }
 
   const months = [...dates.months].sort();
   for (const month of months) {
@@ -82,6 +98,13 @@ export function generateWindows(
     }
   }
   return [...out.values()].sort((a, b) => a.depart.localeCompare(b.depart) || a.nights - b.nights);
+}
+
+/** Meses que cubren unos rangos de días (para la búsqueda por meses y los festivos). */
+export function monthsOfRanges(ranges: { from: string; to: string }[]): string[] {
+  const months = new Set<string>();
+  for (const r of ranges) for (let d = r.from; d <= r.to; d = addDays(d, 1)) months.add(d.slice(0, 7));
+  return [...months].sort();
 }
 
 export function monthsOf(windows: TripWindow[]): string[] {

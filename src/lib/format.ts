@@ -24,3 +24,17 @@ export function monthLabel(m: string): string {
 }
 
 export const STOPS_LABEL = ["Directo", "Máx. 1 escala", "Máx. 2 escalas"];
+
+function dayLabel(d: string): string {
+  return new Date(`${d}T00:00:00Z`).toLocaleDateString("es-ES", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+/** Resumen corto de las fechas de una alerta: rangos de días concretos o meses. */
+export function datesLabel(dates: { months: string[]; ranges?: { from: string; to: string; departAfter?: string; returnBy?: string }[] }): string {
+  if (dates.ranges?.length) {
+    return dates.ranges
+      .map((r) => `${dayLabel(r.from)}${r.departAfter ? ` ${r.departAfter}` : ""} – ${dayLabel(r.to)}${r.returnBy ? ` ${r.returnBy}` : ""}`)
+      .join(", ");
+  }
+  return dates.months.map(monthLabel).join(", ");
+}

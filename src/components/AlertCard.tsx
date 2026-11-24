@@ -1,6 +1,6 @@
 import { Bed, Bus, MapPin, PartyPopper, Plane } from "lucide-react";
 import Link from "next/link";
-import { ago, eur, monthLabel } from "@/lib/format";
+import { ago, datesLabel, eur } from "@/lib/format";
 import type { Alert, Match } from "@/lib/types";
 
 export function destinationText(a: Alert) {
@@ -72,7 +72,7 @@ export function AlertCard({ a, ms, index = 0 }: { a: Alert; ms: Match[]; index?:
         {pending > 0 && <span className="badge bg-gradient-brand text-white">{pending} por decidir</span>}
         {saved > 0 && <span className="badge bg-accent-soft text-accent">{saved} guardadas</span>}
         <span className="badge bg-surface-2">≤ {eur(c.flight.maxPrice)}</span>
-        <span className="badge bg-surface-2 capitalize">{c.dates.months.map(monthLabel).join(", ")}</span>
+        <span className="badge bg-surface-2 capitalize">{datesLabel(c.dates)}</span>
         {c.hotel && (
           <span className="badge bg-surface-2">
             <Bed className="h-3 w-3" /> alojamiento

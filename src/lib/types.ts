@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const iata = z.string().regex(/^[A-Z]{3}$/, "Código IATA de 3 letras");
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Hora HH:MM");
 
 export const placeSchema = z.object({
   label: z.string().min(1),
@@ -45,6 +46,15 @@ export const alertConfigSchema = z.object({
     departEveningBefore: z.boolean().default(true),
     minNights: z.number().int().min(1).max(30).default(1),
     maxNights: z.number().int().min(1).max(30).default(4),
+    // Días concretos: si hay rangos, se busca solo dentro de ellos (los meses se calculan a partir de ellos).
+    // departAfter: hora mínima de salida el primer día. returnBy: hora límite del vuelo de vuelta el último día.
+    ranges: z
+      .array(z.object({ from: isoDate, to: isoDate, departAfter: hhmm.optional(), returnBy: hhmm.optional() }))
+      .optional(),
+    // Franjas horarias de salida de los vuelos, cualquier día (p. ej. sin madrugones).
+    times: z
+      .object({ outFrom: hhmm.optional(), outTo: hhmm.optional(), backFrom: hhmm.optional(), backTo: hhmm.optional() })
+      .optional(),
   }),
   flight: z.object({
     maxPrice: z.number().positive(),
@@ -90,6 +100,9 @@ export type TripWindow = {
   nights: number;
   // Días laborables que tendrías que pedir (las tardes de salida no cuentan).
   workdaysUsed: number;
+  // Límites de un rango de días concretos: no salir antes de / volver como tarde ("AAAA-MM-DDTHH:MM").
+  earliest?: string;
+  latestReturn?: string;
 };
 
 /** Un tramo de solo ida dentro de un viaje combinado (billete propio). */
@@ -122,6 +135,8 @@ export type FlightOffer = {
   airline?: string;
   departTime?: string;
   arriveTime?: string;
+  // Hora de salida del vuelo de vuelta (si se conoce).
+  returnTime?: string;
   link?: string;
   // Viaje combinado: billetes separados y ciudades donde se enlaza.
   legs?: FlightLeg[];

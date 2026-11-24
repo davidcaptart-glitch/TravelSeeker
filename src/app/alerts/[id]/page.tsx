@@ -10,7 +10,7 @@ import { MatchActions } from "@/components/MatchActions";
 import { StillSearching } from "@/components/OfferCard";
 import { PriceInsights } from "@/components/PriceInsights";
 import { formatDate } from "@/lib/dates";
-import { ago, eur, minutes, monthLabel, STOPS_LABEL } from "@/lib/format";
+import { ago, datesLabel, eur, minutes, STOPS_LABEL } from "@/lib/format";
 import { getAlert, listMatches, markMatchesSeen, priceHistory } from "@/lib/repo";
 import { currentUserId } from "@/lib/session";
 import type { Match } from "@/lib/types";
@@ -214,7 +214,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
   const facts = [
     ["Aviso", c.notifyMode === "flight" ? "Con el vuelo" : "Vuelo + alojamiento"],
     ["Vuelo", `≤ ${eur(c.flight.maxPrice)} · ${STOPS_LABEL[c.flight.maxStops]} · ${c.flight.passengers} pers.`],
-    ["Fechas", `${c.dates.months.map(monthLabel).join(", ")} · ${c.dates.minNights}-${c.dates.maxNights} noches`],
+    ["Fechas", `${datesLabel(c.dates)} · ${c.dates.minNights}-${c.dates.maxNights} noches${c.dates.times ? " · con horarios" : ""}`],
     [
       "Alojamiento",
       c.hotel

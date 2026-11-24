@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Ban, BellRing, Bookmark, Moon, Palette, Plane, Radar, RefreshCw, Shuffle, Sparkles } from "lucide-react";
+import { Ban, BellRing, Bookmark, CalendarRange, Clock, Moon, Palette, Plane, Radar, RefreshCw, Shuffle, Sparkles } from "lucide-react";
 
 /**
  * Novedades que ve el usuario al abrir la app después de una actualización.
@@ -14,6 +14,28 @@ export type Release = {
 };
 
 export const CHANGELOG: Release[] = [
+  {
+    id: "2026-11-24-dias-y-horas",
+    date: "2026-11-24",
+    title: "Días concretos y horarios",
+    items: [
+      {
+        icon: CalendarRange,
+        title: "Días concretos, no solo meses",
+        text: "En Fechas elige «Días concretos» y pon los días en que estás libre, por ejemplo del viernes 12 al domingo 14. Puedes añadir varios rangos.",
+      },
+      {
+        icon: Clock,
+        title: "Con hora de salida y de vuelta",
+        text: "En cada rango puedes decir a partir de qué hora sales el primer día y hasta qué hora puede salir la vuelta el último.",
+      },
+      {
+        icon: Clock,
+        title: "Franjas horarias",
+        text: "También puedes elegir entre qué horas quieres que salgan los vuelos de ida y de vuelta, por ejemplo sin madrugones.",
+      },
+    ],
+  },
   {
     id: "2026-11-19-combinados",
     date: "2026-11-19",

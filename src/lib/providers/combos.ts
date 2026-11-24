@@ -344,6 +344,7 @@ export async function findCombos(s: ComboSearch): Promise<FlightOffer[]> {
           airline: [...new Set(all.map((l) => l.airline))].join(" + "),
           departTime: out.legs[0].departTime,
           arriveTime: out.legs.at(-1)!.arriveTime,
+          returnTime: back.legs[0].departTime,
           link: out.legs[0].link,
           legs: all,
           via,

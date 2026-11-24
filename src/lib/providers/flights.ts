@@ -70,6 +70,7 @@ async function screenTravelpayouts(origin: string, destination: string | null, m
         durationMinutes: d.duration,
         airline: d.airline,
         departTime: d.departure_at.slice(11, 16),
+        returnTime: d.return_at!.slice(11, 16),
         link: `https://www.aviasales.com${d.link}`,
       }));
   });
