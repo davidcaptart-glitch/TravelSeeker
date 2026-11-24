@@ -2,6 +2,9 @@ import webpush from "web-push";
 import nodemailer from "nodemailer";
 import { deletePushSubscription, pushSubscriptions } from "./repo";
 import { query } from "./db";
+import { makeT } from "../i18n/core";
+import { isLocale } from "../i18n/config";
+import { MESSAGES } from "../i18n/messages";
 
 const VAPID_PUBLIC = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
@@ -36,14 +39,17 @@ export async function notifyUser(userId: string, n: Notification): Promise<numbe
   }
 
   if (mailer) {
-    const [u] = await query<{ email: string | null }>("SELECT email FROM users WHERE id = ?", [userId]);
+    const [u] = await query<{ email: string | null; locale: string | null }>("SELECT email, locale FROM users WHERE id = ?", [userId]);
     if (u?.email) {
+      // El email, en el idioma del usuario (sin petición: puede ir desde el worker).
+      const locale = isLocale(u.locale) ? u.locale : "es";
+      const t = makeT(locale, MESSAGES.engine[locale], MESSAGES.engine.es);
       try {
         await mailer.sendMail({
           from: process.env.MAIL_FROM ?? "TravelSeeker <alertas@travelseeker.local>",
           to: u.email,
           subject: n.title,
-          text: `${n.body}\n\nVer detalles: ${APP_URL}${n.path}`,
+          text: `${n.body}\n\n${t("emailDetails", { url: `${APP_URL}${n.path}` })}`,
         });
         delivered++;
       } catch (err) {

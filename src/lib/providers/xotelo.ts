@@ -1,3 +1,4 @@
+import { bookingLinksFor } from "./hotelLinks";
 import { cached } from "../db";
 import { haversineKm } from "../geo";
 import type { HotelOffer, Place } from "../types";
@@ -37,6 +38,47 @@ const KNOWN_GEOS: { lat: number; lon: number; geo: string }[] = [
   { lat: 55.9533, lon: -3.1883, geo: "g186525" }, // Edimburgo
   { lat: 31.6295, lon: -7.9811, geo: "g293734" }, // Marrakech
   { lat: 40.7128, lon: -74.006, geo: "g60763" }, // Nueva York
+  // Resto del mundo (comprobados con Xotelo): ciudades grandes y extensas donde Wikidata no basta.
+  { lat: 25.2048, lon: 55.2708, geo: "g295424" }, // Dubái
+  { lat: 21.1619, lon: -86.8515, geo: "g150807" }, // Cancún
+  { lat: 35.6762, lon: 139.6503, geo: "g298184" }, // Tokio
+  { lat: -23.5505, lon: -46.6333, geo: "g303631" }, // São Paulo
+  { lat: -22.9068, lon: -43.1729, geo: "g303506" }, // Río de Janeiro
+  { lat: 19.4326, lon: -99.1332, geo: "g150800" }, // Ciudad de México
+  { lat: -34.6037, lon: -58.3816, geo: "g312741" }, // Buenos Aires
+  { lat: 22.3193, lon: 114.1694, geo: "g294217" }, // Hong Kong
+  { lat: 37.5665, lon: 126.978, geo: "g294197" }, // Seúl
+  { lat: 1.3521, lon: 103.8198, geo: "g294265" }, // Singapur
+  { lat: 3.139, lon: 101.6869, geo: "g298570" }, // Kuala Lumpur
+  { lat: 10.8231, lon: 106.6297, geo: "g293925" }, // Ho Chi Minh
+  { lat: 21.0278, lon: 105.8342, geo: "g293924" }, // Hanói
+  { lat: 7.8804, lon: 98.3923, geo: "g293920" }, // Phuket
+  { lat: -8.7184, lon: 115.1686, geo: "g294226" }, // Bali (Kuta)
+  { lat: -33.8688, lon: 151.2093, geo: "g255060" }, // Sídney
+  { lat: -37.8136, lon: 144.9631, geo: "g255100" }, // Melbourne
+  { lat: 37.7749, lon: -122.4194, geo: "g60713" }, // San Francisco
+  { lat: 34.0522, lon: -118.2437, geo: "g32655" }, // Los Ángeles
+  { lat: 25.7617, lon: -80.1918, geo: "g34438" }, // Miami
+  { lat: 36.1699, lon: -115.1398, geo: "g45963" }, // Las Vegas
+  { lat: 43.6532, lon: -79.3832, geo: "g155019" }, // Toronto
+  { lat: 4.711, lon: -74.0721, geo: "g294074" }, // Bogotá
+  { lat: -12.0464, lon: -77.0428, geo: "g294316" }, // Lima
+  { lat: 23.1136, lon: -82.3666, geo: "g147271" }, // La Habana
+  { lat: 18.5601, lon: -68.3725, geo: "g147293" }, // Punta Cana
+  { lat: 30.0444, lon: 31.2357, geo: "g294201" }, // El Cairo
+  { lat: -33.9249, lon: 18.4241, geo: "g1722390" }, // Ciudad del Cabo
+  { lat: 25.2854, lon: 51.531, geo: "g294009" }, // Doha
+  { lat: 24.4539, lon: 54.3773, geo: "g294013" }, // Abu Dabi
+  { lat: 32.0853, lon: 34.7818, geo: "g293984" }, // Tel Aviv
+  { lat: 39.9042, lon: 116.4074, geo: "g294212" }, // Pekín
+  { lat: 31.2304, lon: 121.4737, geo: "g308272" }, // Shanghái
+  { lat: 25.033, lon: 121.5654, geo: "g293913" }, // Taipéi
+  { lat: 19.076, lon: 72.8777, geo: "g304554" }, // Bombay
+  { lat: 35.0116, lon: 135.7681, geo: "g298564" }, // Kioto
+  { lat: 34.6937, lon: 135.5023, geo: "g298566" }, // Osaka
+  { lat: 45.5017, lon: -73.5673, geo: "g155032" }, // Montreal
+  { lat: 49.2827, lon: -123.1207, geo: "g154943" }, // Vancouver
+  { lat: -33.4489, lon: -70.6693, geo: "g294305" }, // Santiago de Chile
 ];
 
 // Opcional: TripAdvisor Content API (plan gratuito con cupo mensual), solo para buscar el código de ciudad.
@@ -139,9 +181,11 @@ async function xoteloList(geo: string): Promise<XoteloItem[]> {
   });
 }
 
-/** Precio más bajo por noche entre las agencias (null si no hay disponibilidad). */
-async function xoteloRate(key: string, checkIn: string, checkOut: string, adults: number): Promise<number | null> {
-  return cached(`xotelo:rate:${key}:${checkIn}:${checkOut}:${adults}`, 12 * 3600, async () => {
+type XoteloRate = { code: string; name: string; rate: number };
+
+/** Precio por noche en cada agencia (Booking.com, Agoda, Trip.com, web oficial…); vacío si no hay disponibilidad. */
+async function xoteloRates(key: string, checkIn: string, checkOut: string, adults: number): Promise<XoteloRate[]> {
+  return cached(`xotelo:rates:${key}:${checkIn}:${checkOut}:${adults}`, 12 * 3600, async () => {
     const p = new URLSearchParams({
       hotel_key: key,
       chk_in: checkIn,
@@ -152,9 +196,8 @@ async function xoteloRate(key: string, checkIn: string, checkOut: string, adults
     });
     const res = await fetch(`${API}/rates?${p}`, { headers: UA, signal: AbortSignal.timeout(30_000) });
     if (!res.ok) throw new Error(`Xotelo ${res.status}`);
-    const json = (await res.json()) as { result?: { rates?: { rate: number }[] } };
-    const rates = (json.result?.rates ?? []).map((r) => r.rate).filter((r) => r > 0);
-    return rates.length ? Math.min(...rates) : null;
+    const json = (await res.json()) as { result?: { rates?: XoteloRate[] } };
+    return (json.result?.rates ?? []).filter((r) => r.rate > 0);
   });
 }
 
@@ -200,10 +243,11 @@ export async function xoteloHotels(
   const offers: HotelOffer[] = [];
   for (let i = 0; i < pre.length; i += 4) {
     const chunk = pre.slice(i, i + 4);
-    const rates = await Promise.all(chunk.map(({ h }) => xoteloRate(h.key, checkIn, checkOut, guests).catch(() => null)));
+    const rates = await Promise.all(chunk.map(({ h }) => xoteloRates(h.key, checkIn, checkOut, guests).catch(() => [] as XoteloRate[])));
     chunk.forEach(({ h, type }, j) => {
-      const rate = rates[j];
-      if (!rate) return;
+      if (!rates[j].length) return;
+      const rate = Math.min(...rates[j].map((r) => r.rate));
+      const bookingLinks = bookingLinksFor({ name: h.name, city: place.label.split(",")[0], checkIn, checkOut, guests }, rates[j]);
       offers.push({
         provider: "xotelo",
         name: h.name,
@@ -213,7 +257,10 @@ export async function xoteloHotels(
         rating: h.review_summary?.rating,
         lat: h.geo?.latitude,
         lon: h.geo?.longitude,
-        link: h.url,
+        // Reservar en la agencia más barata, con fechas y personas puestas.
+        link: bookingLinks[0]?.url ?? h.url,
+        bookingLinks,
+        reviewsLink: h.url,
         image: h.image,
         usualMin: h.price_ranges?.minimum,
         usualMax: h.price_ranges?.maximum,

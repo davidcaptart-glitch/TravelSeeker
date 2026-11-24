@@ -1,25 +1,25 @@
+import { CalendarLinks } from "@/components/CalendarLinks";
 import { AlertTriangle, ArrowLeft, Bed, ChevronDown, ExternalLink, MapPin, PartyPopper, Plane, Radar, Star, TrainFront } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import Loading from "@/app/loading";
+import Loading from "@/app/[lang]/loading";
 import { AlertActions } from "@/components/AlertActions";
 import { GroundOptions, pickGround } from "@/components/GroundOptions";
 import { ComboLegs, airlineName } from "@/components/ComboLegs";
 import { MatchActions } from "@/components/MatchActions";
 import { StillSearching } from "@/components/OfferCard";
 import { PriceInsights } from "@/components/PriceInsights";
-import { formatDate } from "@/lib/dates";
-import { ago, datesLabel, eur, minutes, STOPS_LABEL } from "@/lib/format";
+import type { Translator } from "@/i18n/core";
+import type { Format } from "@/i18n/format";
+import type { NsMessages } from "@/i18n/messages";
+import { getFormat, getT } from "@/i18n/server";
+import { getAirport } from "@/lib/geo";
 import { getAlert, listMatches, markMatchesSeen, priceHistory } from "@/lib/repo";
 import { currentUserId } from "@/lib/session";
-import type { Match } from "@/lib/types";
+import type { HotelOffer, Match } from "@/lib/types";
 
-const HOTEL_TYPE = {
-  hotel: "Hotel",
-  apartment: "Apartamento",
-  hostel: "Hostal/albergue",
-};
+type I18n = { t: Translator<NsMessages<"alertDetail">>; tt: Translator<NsMessages<"transport">>; f: Format };
 
 function shortLabel(label: string) {
   return label.split(",")[0];
@@ -29,7 +29,56 @@ function mapsDirections(from: string, to: string) {
   return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(from)}&destination=${encodeURIComponent(to)}&travelmode=transit`;
 }
 
-function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "flight_hotel"; best: boolean }) {
+/**
+ * Reservar el alojamiento: botón principal en la web más barata (con fechas y personas ya puestas),
+ * el resto de webs con su precio por noche y el enlace a las opiniones.
+ */
+function HotelBooking({ hotel, t, f }: { hotel: HotelOffer } & Pick<I18n, "t" | "f">) {
+  const siteName = (b: { label: string; official?: boolean }) => (b.official || b.label === "official" ? t("officialSite") : b.label);
+  const links = hotel.bookingLinks ?? [];
+  const [first, ...others] = links;
+  // Coincidencias antiguas: solo tienen link (sin la lista de webs).
+  const primary = first
+    ? { url: first.url, label: t("bookOnSite", { site: siteName(first), price: f.eur(first.pricePerNight ?? hotel.pricePerNight) }) }
+    : hotel.link
+      ? { url: hotel.link, label: t("bookHotel", { price: f.eur(hotel.pricePerNight) }) }
+      : null;
+  if (!primary && !hotel.reviewsLink) return null;
+  return (
+    <div className="mt-3 space-y-2">
+      {primary && (
+        <a href={primary.url} target="_blank" rel="noreferrer" className="btn-primary min-h-10 w-full px-4 text-sm sm:w-auto">
+          {primary.label} <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+        </a>
+      )}
+      {others.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {others.map((b, i) => (
+            <a
+              key={`${b.label}-${i}`}
+              href={b.url}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-ghost min-h-9 px-3 text-xs tabular-nums"
+            >
+              {siteName(b)}
+              {b.pricePerNight !== undefined ? ` ${f.eur(b.pricePerNight)}` : ""}
+              <ExternalLink className="h-3 w-3 shrink-0" />
+            </a>
+          ))}
+        </div>
+      )}
+      {primary && <p className="hint">{t("bookingHint")}</p>}
+      {hotel.reviewsLink && (
+        <a href={hotel.reviewsLink} target="_blank" rel="noreferrer" className="hint inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline">
+          <Star className="h-3 w-3" /> {t("viewReviews")}
+        </a>
+      )}
+    </div>
+  );
+}
+
+function MatchCard({ m, notifyMode, best, t, tt, f }: { m: Match; notifyMode: "flight" | "flight_hotel"; best: boolean } & I18n) {
   const { flight, hotel, window, lastMile } = m.data;
   const pendingHotel = notifyMode === "flight_hotel" && m.kind === "flight";
   const destLabel = lastMile?.to.label ?? m.data.destinationLabel;
@@ -44,37 +93,39 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
           <div className="mb-1 flex flex-wrap gap-1.5">
             {m.status === "booked" && (
               <span className="badge bg-good-soft text-good">
-                <PartyPopper className="h-3 w-3" /> Reservado
+                <PartyPopper className="h-3 w-3" /> {t("badgeBooked")}
               </span>
             )}
-            {m.status === "saved" && <span className="badge bg-accent-soft text-accent">Guardado</span>}
-            {!m.seen && m.status === "new" && <span className="badge bg-gradient-brand text-white">Nuevo</span>}
-            {best && <span className="badge bg-good-soft text-good">Mejor precio</span>}
+            {m.status === "saved" && <span className="badge bg-accent-soft text-accent">{t("badgeSaved")}</span>}
+            {!m.seen && m.status === "new" && <span className="badge bg-gradient-brand text-white">{t("badgeNew")}</span>}
+            {best && <span className="badge bg-good-soft text-good">{t("badgeBest")}</span>}
           </div>
           <p className="text-lg font-semibold">
-            {formatDate(window.depart)} – {formatDate(window.ret)}
+            {window.nights === 0 ? f.date(window.depart) : `${f.date(window.depart)} – ${f.date(window.ret)}`}
           </p>
           <p className="hint">
-            {window.nights} {window.nights === 1 ? "noche" : "noches"}
-            {window.workdaysUsed ? ` · gastas ${window.workdaysUsed} día(s) de vacaciones` : " · sin gastar vacaciones"}
+            {f.nights(window.nights)}
+            {` · ${window.workdaysUsed ? t("workdaysUsed", { n: window.workdaysUsed }) : t("noWorkdays")}`}
           </p>
         </div>
-        <div className="shrink-0 text-right">
-          <p className="text-gradient text-2xl font-extrabold tabular-nums">{eur(m.totalPrice)}</p>
-          <p className="hint">{hotel ? "vuelo + alojamiento" : "solo vuelo"}</p>
+        <div className="shrink-0 text-end">
+          <p className="text-gradient text-2xl font-extrabold tabular-nums">{f.eur(m.totalPrice)}</p>
+          <p className="hint">{hotel ? t("flightHotel") : t("flightOnly")}</p>
           {groundRoundTrip > 0 && (
             <p className="mt-1 text-sm font-medium tabular-nums">
-              ~{eur(m.totalPrice + groundRoundTrip)}
-              <span className="hint block font-normal">con traslados (+{eur(groundRoundTrip)})</span>
+              ~{f.eur(m.totalPrice + groundRoundTrip)}
+              <span className="hint block font-normal">{t("withTransfers", { price: f.eur(groundRoundTrip) })}</span>
             </p>
           )}
         </div>
       </header>
 
+      {m.status === "booked" && <CalendarLinks m={m} />}
+
       {pendingHotel && (
         <p className="mx-4 mb-3 flex items-start gap-2 rounded-2xl bg-warn-soft px-3 py-2 text-sm text-warn sm:mx-5">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          El vuelo cumple, pero aún no hay alojamiento que encaje: no te hemos avisado.
+          {t("pendingHotel")}
         </p>
       )}
 
@@ -88,23 +139,24 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">
-              <span className="font-mono">{flight.origin}</span> → <span className="font-mono">{flight.destination}</span>
+              <span className="font-mono">{flight.origin}</span> <span className="inline-block rtl:-scale-x-100">→</span>{" "}
+              <span className="font-mono">{flight.destination}</span>
               {flight.airline ? ` · ${airlineName(flight.airline)}` : ""}
             </p>
             <p className="hint">
-              {flight.stops === 0 ? "Directo" : `${flight.stops} escala(s)`}
-              {flight.departTime ? ` · sale ${flight.departTime}` : ""}
-              {flight.arriveTime ? ` · llega ${flight.arriveTime}` : ""}
-              {flight.durationMinutes ? ` · ${minutes(flight.durationMinutes)}` : ""}
+              {t("stopsCount", { n: flight.stops })}
+              {flight.departTime ? ` · ${t("departs", { time: flight.departTime })}` : ""}
+              {flight.arriveTime ? ` · ${t("arrives", { time: flight.arriveTime })}` : ""}
+              {flight.durationMinutes ? ` · ${f.minutes(flight.durationMinutes)}` : ""}
             </p>
             <p className="hint">
-              {eur(flight.price)}/persona ida y vuelta · {flight.provider}
-              {flight.cached ? " (precio en caché, compruébalo)" : ""}
+              {t("pricePerPersonReturn", { price: f.eur(flight.price) })} · {flight.provider}
+              {flight.cached ? ` ${t("cachedPrice")}` : ""}
             </p>
           </div>
           {flight.link && (
             <a href={flight.link} target="_blank" rel="noreferrer" className="btn-ghost min-h-10 shrink-0 px-3">
-              Ver <ExternalLink className="h-3.5 w-3.5" />
+              {t("view")} <ExternalLink className="h-3.5 w-3.5" />
             </a>
           )}
         </section>
@@ -116,25 +168,35 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
               <MapPin className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Cómo llegar a {shortLabel(destLabel)}</p>
+              <p className="text-sm font-medium">{t("getTo", { place: shortLabel(destLabel) })}</p>
               <p className="hint">
-                Desde el aeropuerto {flight.destination}
-                {flight.arriveTime ? `, aterrizando a las ${flight.arriveTime}` : ""}. Precio de un trayecto (el taxi, por vehículo).
+                {flight.arriveTime
+                  ? t("fromAirportLanding", { code: flight.destination, time: flight.arriveTime })
+                  : t("fromAirport", { code: flight.destination })}{" "}
+                {t("groundLead")}
               </p>
             </div>
           </div>
           {lastMile?.options.length ? (
-            <GroundOptions options={lastMile.options} />
+            <GroundOptions
+              options={lastMile.options}
+              from={lastMile.from}
+              to={lastMile.to}
+              country={getAirport(flight.destination)?.country}
+              pax={pax}
+              t={tt}
+              f={f}
+            />
           ) : (
             <p className="rounded-2xl bg-surface-2 px-3 py-2 text-sm text-muted">
-              No hemos podido calcular el trayecto.{" "}
+              {t("noRoute")}{" "}
               <a
                 className="font-medium text-accent"
-                href={mapsDirections(`Aeropuerto ${flight.destination}`, destLabel)}
+                href={mapsDirections(tt("airport", { code: flight.destination }), destLabel)}
                 target="_blank"
                 rel="noreferrer"
               >
-                Ver cómo ir en Google Maps
+                {t("viewInMaps")}
               </a>
             </p>
           )}
@@ -149,7 +211,7 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{hotel.name}</p>
                 <p className="hint flex flex-wrap items-center gap-x-1">
-                  {HOTEL_TYPE[hotel.type]}
+                  {t(`hotelType_${hotel.type}`)}
                   {hotel.stars ? ` · ${hotel.stars}★` : ""}
                   {hotel.rating ? (
                     <>
@@ -159,23 +221,19 @@ function MatchCard({ m, notifyMode, best }: { m: Match; notifyMode: "flight" | "
                   ) : null}
                 </p>
                 <p className="hint">
-                  {eur(hotel.total)} en total ({eur(hotel.pricePerNight)}/noche) · {hotel.provider}
+                  {t("hotelTotal", { total: f.eur(hotel.total), night: f.eur(hotel.pricePerNight) })} · {hotel.provider}
                 </p>
                 {hotel.usualMin && hotel.usualMax ? (
                   <p className="hint mt-1 flex flex-wrap items-center gap-1.5">
-                    Suele costar {eur(hotel.usualMin)}–{eur(hotel.usualMax)}/noche
-                    {hotel.pricePerNight <= hotel.usualMin * 1.1 && <span className="badge bg-good-soft text-good">Buen precio</span>}
+                    {t("hotelUsual", { min: f.eur(hotel.usualMin), max: f.eur(hotel.usualMax) })}
+                    {hotel.pricePerNight <= hotel.usualMin * 1.1 && <span className="badge bg-good-soft text-good">{t("goodPrice")}</span>}
                   </p>
                 ) : null}
+                <HotelBooking hotel={hotel} t={t} f={f} />
               </div>
-              {hotel.link && (
-                <a href={hotel.link} target="_blank" rel="noreferrer" className="btn-ghost min-h-10 shrink-0 px-3">
-                  Ver <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-              )}
             </>
           ) : (
-            <p className="hint self-center">Sin alojamiento que cumpla (o la alerta no lo pide).</p>
+            <p className="hint self-center">{t("noHotel")}</p>
           )}
         </section>
       </div>
@@ -192,7 +250,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
   const userId = await currentUserId();
   const alert = await getAlert(id, userId);
   if (!alert) notFound();
-  const [matches, history] = await Promise.all([listMatches(id), priceHistory(id)]);
+  const [matches, history, t, tt, f] = await Promise.all([listMatches(id), priceHistory(id), getT("alertDetail"), getT("transport"), getFormat()]);
   const c = alert.config;
   const s = alert.lastSummary;
   const booked = matches.filter((m) => m.status === "booked");
@@ -205,28 +263,37 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
   const list = (ms: Match[]) =>
     ms.map((m, i) => (
       <div key={m.id} className="animate-rise" style={{ animationDelay: `${100 + Math.min(i, 6) * 60}ms` }}>
-        <MatchCard m={m} notifyMode={c.notifyMode} best={m.id === bestId} />
+        <MatchCard m={m} notifyMode={c.notifyMode} best={m.id === bestId} t={t} tt={tt} f={f} />
       </div>
     ));
   // Se marcan como vistos al abrir la alerta (se muestran resaltados solo esta vez).
   if (matches.some((m) => !m.seen)) await markMatchesSeen(id);
 
   const facts = [
-    ["Aviso", c.notifyMode === "flight" ? "Con el vuelo" : "Vuelo + alojamiento"],
-    ["Vuelo", `≤ ${eur(c.flight.maxPrice)} · ${STOPS_LABEL[c.flight.maxStops]} · ${c.flight.passengers} pers.`],
-    ["Fechas", `${datesLabel(c.dates)} · ${c.dates.minNights}-${c.dates.maxNights} noches${c.dates.times ? " · con horarios" : ""}`],
+    [t("factNotify"), c.notifyMode === "flight" ? t("notifyFlight") : t("notifyFlightHotel")],
+    [t("factFlight"), `≤ ${f.eur(c.flight.maxPrice)} · ${f.stops(c.flight.maxStops)} · ${t("passengers", { n: c.flight.passengers })}`],
     [
-      "Alojamiento",
+      t("factDates"),
+      [
+        f.datesLabel(c.dates),
+        !c.dates.dayTrip && t("nightsRange", { min: c.dates.minNights, max: c.dates.maxNights }),
+        c.dates.times && t("withTimes"),
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    ],
+    [
+      t("factHotel"),
       c.hotel
-        ? `${c.hotel.types.map((t) => HOTEL_TYPE[t]).join(", ")}${c.hotel.maxPricePerNight ? ` ≤ ${eur(c.hotel.maxPricePerNight)}/noche` : ""}`
-        : "No",
+        ? `${c.hotel.types.map((ht) => t(`hotelType_${ht}`)).join(", ")}${c.hotel.maxPricePerNight ? ` ${t("maxPerNight", { price: f.eur(c.hotel.maxPricePerNight) })}` : ""}`
+        : t("no"),
     ],
   ];
 
   return (
     <div className="space-y-5">
       <Link href="/alerts" className="eyebrow-pill transition hover:text-foreground">
-        <ArrowLeft className="h-3.5 w-3.5" /> Alertas
+        <ArrowLeft className="h-3.5 w-3.5 rtl:-scale-x-100" /> {t("back")}
       </Link>
 
       <section className="animate-rise hero p-5 sm:p-6">
@@ -238,19 +305,20 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
               ) : (
                 <span className="h-2 w-2 rounded-full bg-white/40" />
               )}
-              {booked.length ? "Viaje reservado" : alert.active ? `Buscando cada ${c.checkEveryHours} h` : "Pausada"} · {ago(alert.lastRunAt)}
+              {booked.length ? t("stateBooked") : alert.active ? t("stateSearchingEvery", { h: c.checkEveryHours }) : t("statePaused")} ·{" "}
+              {f.ago(alert.lastRunAt)}
             </p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-balance">{c.name}</h1>
             <p className="mt-1 text-sm text-white/75">
-              <span className="font-mono">{c.origins.join(" · ")}</span> →{" "}
-              {c.destination.kind === "place" ? c.destination.place.label.split(",").slice(0, 2).join(",") : "cualquier sitio"}
+              <span className="font-mono">{c.origins.join(" · ")}</span> <span className="inline-block rtl:-scale-x-100">→</span>{" "}
+              {c.destination.kind === "place" ? c.destination.place.label.split(",").slice(0, 2).join(",") : t("anywhere")}
               {c.destinationAirports.length ? ` (${c.destinationAirports.join(", ")})` : ""}
             </p>
           </div>
           {bestPrice !== null && (
-            <div className="shrink-0 text-right">
-              <p className="text-xs text-white/65">desde</p>
-              <p className="text-2xl font-extrabold tabular-nums">{eur(bestPrice)}</p>
+            <div className="shrink-0 text-end">
+              <p className="text-xs text-white/65">{t("from")}</p>
+              <p className="text-2xl font-extrabold tabular-nums">{f.eur(bestPrice)}</p>
             </div>
           )}
         </div>
@@ -273,8 +341,8 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
               <PartyPopper className="h-5 w-5" />
             </span>
             <div>
-              <p className="font-bold">¡Ya tienes viaje!</p>
-              <p className="text-sm text-muted">Hemos dejado de buscar en esta alerta. Si al final no lo reservas, pulsa «No lo he reservado» y seguimos.</p>
+              <p className="font-bold">{t("bookedTitle")}</p>
+              <p className="text-sm text-muted">{t("bookedText")}</p>
             </div>
           </div>
           {list(booked)}
@@ -284,9 +352,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
           <div className="card flex items-center gap-3 p-4">
             <StillSearching
               text={
-                open.length
-                  ? `Seguimos buscando más opciones cada ${c.checkEveryHours} h, hasta que reserves una.`
-                  : `Seguimos buscando cada ${c.checkEveryHours} h. Te avisaremos en cuanto algo encaje.`
+                open.length ? t("stillSearchingMore", { h: c.checkEveryHours }) : t("stillSearching", { h: c.checkEveryHours })
               }
             />
           </div>
@@ -296,7 +362,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
       {pendingList.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-lg font-bold">
-            Por decidir <span className="font-normal text-muted">({pendingList.length})</span>
+            {t("pendingTitle")} <span className="font-normal text-muted">({pendingList.length})</span>
           </h2>
           {list(pendingList)}
         </section>
@@ -305,7 +371,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
       {savedList.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-lg font-bold">
-            Guardadas <span className="font-normal text-muted">({savedList.length})</span>
+            {t("savedTitle")} <span className="font-normal text-muted">({savedList.length})</span>
           </h2>
           {list(savedList)}
         </section>
@@ -316,11 +382,11 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
           <span className="grid h-12 w-12 place-items-center rounded-2xl bg-accent-soft text-cyan">
             <Radar className="h-6 w-6" />
           </span>
-          <p className="font-bold">{dismissed.length ? "Has revisado todas las opciones" : "Todavía nada cumple tus condiciones"}</p>
+          <p className="font-bold">{dismissed.length ? t("allReviewed") : t("nothingYet")}</p>
           <p className="max-w-sm text-sm text-muted">
             {alert.active
-              ? "Seguimos buscando y te avisaremos. Si tarda, prueba a subir el precio o añadir meses."
-              : "La alerta está pausada: reanúdala para seguir recibiendo opciones."}
+              ? t("nothingYetActive")
+              : t("nothingYetPaused")}
           </p>
         </div>
       )}
@@ -330,7 +396,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
       {dismissed.length > 0 && (
         <details className="group">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-2xl px-1 py-2 text-sm font-semibold text-muted">
-            Descartadas ({dismissed.length}) · no te las volveremos a ofrecer
+            {t("dismissedTitle", { n: dismissed.length })}
             <ChevronDown className="h-4 w-4 shrink-0 transition group-open:rotate-180" />
           </summary>
           <div className="mt-3 space-y-3 opacity-80">{list(dismissed)}</div>
@@ -344,11 +410,18 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
               <TrainFront className="h-5 w-5" />
             </span>
             <div>
-              <h2 className="font-semibold">Sin avión desde {c.groundFrom.label.split(",")[0]}</h2>
-              <p className="hint">Horarios reales (de un día equivalente si la fecha es lejana). FlixBus con precio real; el resto, estimado.</p>
+              <h2 className="font-semibold">{t("groundOnlyTitle", { place: c.groundFrom.label.split(",")[0] })}</h2>
+              <p className="hint">{t("groundOnlyLead")}</p>
             </div>
           </div>
-          <GroundOptions options={s.groundOnlyOptions ?? [s.groundOnly]} />
+          <GroundOptions
+            options={s.groundOnlyOptions ?? [s.groundOnly]}
+            from={c.groundFrom}
+            to={c.destination.kind === "place" ? c.destination.place : undefined}
+            country={c.destination.kind === "place" ? c.destination.place.country : undefined}
+            t={tt}
+            f={f}
+          />
         </section>
       )}
 
@@ -356,9 +429,9 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
         <details className="card group" open={!matches.length && s.notes.length > 0}>
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
             <span>
-              <span className="block font-semibold">Cómo ha ido la última búsqueda</span>
+              <span className="block font-semibold">{t("lastRunTitle")}</span>
               <span className="hint">
-                {s.windows} fechas revisadas · {s.flightMatches} cumplen · {ago(s.at)}
+                {t("lastRunSummary", { windows: s.windows, matches: s.flightMatches })} · {f.ago(s.at)}
               </span>
             </span>
             <ChevronDown className="h-4 w-4 shrink-0 text-muted transition group-open:rotate-180" />
@@ -366,11 +439,11 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
           {/* El embudo: de todas las fechas posibles a las ofertas que cumplen. */}
           <ol className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
             {[
-              ["Fechas posibles", s.windows],
-              ["Precios cribados", s.screened],
-              ["Candidatos", s.candidates],
-              ["Confirmados en vivo", s.confirmed],
-              ["Cumplen", s.flightMatches],
+              [t("funnelWindows"), s.windows],
+              [t("funnelScreened"), s.screened],
+              [t("funnelCandidates"), s.candidates],
+              [t("funnelConfirmed"), s.confirmed],
+              [t("funnelMatches"), s.flightMatches],
             ].map(([label, n]) => (
               <li key={label} className="rounded-2xl bg-surface-2 p-3">
                 <p className="text-xl font-semibold tabular-nums">{n}</p>
@@ -379,7 +452,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
             ))}
           </ol>
           {s.notes.length > 0 && (
-            <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-muted">
+            <ul className="mt-3 list-disc space-y-1 ps-5 text-xs text-muted">
               {s.notes.map((n, i) => (
                 <li key={i}>{n}</li>
               ))}
@@ -391,7 +464,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
   );
 }
 
-export default function AlertPage({ params }: PageProps<"/alerts/[id]">) {
+export default function AlertPage({ params }: PageProps<"/[lang]/alerts/[id]">) {
   return (
     <Suspense fallback={<Loading />}>
       <AlertContent params={params} />

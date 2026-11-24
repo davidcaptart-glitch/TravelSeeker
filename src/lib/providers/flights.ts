@@ -1,10 +1,11 @@
 import { cached, peekCache } from "../db";
 import { getAirport, haversineKm } from "../geo";
+import { recentLiveFare } from "../observations";
 import { take } from "../quota";
 import type { FlightOffer } from "../types";
 import { ALLOW_MOCK, hash, timeBucket } from "./mock";
 
-import { ryanairFares, ryanairWindows } from "./ryanair";
+import { ryanairDayTrips, ryanairFares, ryanairWindows } from "./ryanair";
 
 /**
  * Embudo de vuelos:
@@ -35,6 +36,8 @@ type TPItem = {
   transfers: number;
   return_transfers?: number;
   duration?: number;
+  // Duración de la ida (duration es la de ida y vuelta juntas).
+  duration_to?: number;
   link: string;
 };
 
@@ -67,13 +70,22 @@ async function screenTravelpayouts(origin: string, destination: string | null, m
         ret: d.return_at!.slice(0, 10),
         price: d.price,
         stops: Math.max(d.transfers, d.return_transfers ?? 0),
-        durationMinutes: d.duration,
+        durationMinutes: d.duration_to ?? d.duration,
         airline: d.airline,
         departTime: d.departure_at.slice(11, 16),
         returnTime: d.return_at!.slice(11, 16),
         link: `https://www.aviasales.com${d.link}`,
       }));
   });
+}
+
+/**
+ * Precios de ida y vuelta de una ruta en un mes (caché de Aviasales, gratis; vacío sin Travelpayouts).
+ * Lo usa el formulario para enseñar el histórico de una ruta nueva antes de crear la alerta.
+ */
+export async function marketFares(origin: string, destination: string, month: string): Promise<FlightOffer[]> {
+  if (!TP_TOKEN) return [];
+  return screenTravelpayouts(origin, destination, month).catch(() => []);
 }
 
 type TPGrouped = { success: boolean; data?: Record<string, { price: number }> };
@@ -133,6 +145,12 @@ function mockOffer(origin: string, destination: string, depart: string, ret: str
   };
 }
 
+const RYANAIR_EXTRA = new Set(["MA", "JO", "IL", "EG", "TN", "DZ"]);
+function ryanairArea(code: string): boolean {
+  const a = getAirport(code);
+  return !a || a.region === "europe" || RYANAIR_EXTRA.has(a.country);
+}
+
 export async function screen(
   origin: string,
   destination: string | null,
@@ -142,7 +160,17 @@ export async function screen(
   adults = 1,
 ): Promise<FlightOffer[]> {
   const inMonth = windows.filter((w) => w.depart.startsWith(month));
-  const ryanair = await ryanairWindows(origin, destination, inMonth, adults);
+  // Ryanair solo vuela en Europa y alrededores: fuera de ahí no se le pregunta.
+  const ryrOk = ryanairArea(origin) && (!destination || ryanairArea(destination));
+  // Viajes de un día (ida y vuelta la misma fecha): se buscan con dos vuelos de solo ida.
+  const sameDay = inMonth.filter((w) => w.depart === w.ret).map((w) => w.depart);
+  const multiDay = inMonth.filter((w) => w.depart !== w.ret);
+  const ryanair = ryrOk
+    ? [
+        ...(multiDay.length ? await ryanairWindows(origin, destination, multiDay, adults) : []),
+        ...(sameDay.length ? await ryanairDayTrips(origin, destination, sameDay, adults) : []),
+      ]
+    : [];
   if (flightProviders.screen === "travelpayouts") {
     return [...ryanair, ...(await screenTravelpayouts(origin, destination, month))];
   }
@@ -182,7 +210,10 @@ export async function confirm(
   const { origin, destination, depart, ret } = candidate;
 
   // 1) Gratis: tarifa real de Ryanair para esas fechas (normalmente ya en caché desde el cribado).
-  const ryr = (await ryanairFares(origin, destination, depart, ret, opts.passengers).catch(() => [])).find(
+  // Viaje de un día de Ryanair: ya es precio real (dos vuelos de solo ida consultados al momento).
+  if (candidate.provider === "ryanair" && depart === ret) return { offer: candidate };
+  const ryrArea = ryanairArea(origin) && ryanairArea(destination);
+  const ryr = (ryrArea ? await ryanairFares(origin, destination, depart, ret, opts.passengers).catch(() => []) : []).find(
     (o) => o.destination === destination,
   );
   if (candidate.provider === "ryanair") return { offer: ryr ?? null };
@@ -201,6 +232,9 @@ export async function confirm(
   const existing = await peekCache<FlightOffer | null>(key);
   if (existing !== undefined) return { offer: existing };
   // 2) Último recurso, con cupo: Google Flights vía SerpApi.
+  // Histórico: si este mismo viaje ya se consultó en directo hace poco (en esta u otra alerta), se reutiliza.
+  const recent = await recentLiveFare(origin, destination, depart, ret, 12);
+  if (recent && recent.stops <= opts.maxStops) return { offer: recent };
   if (!opts.allowPaid) return { offer: null, skipped: true };
   if (!(await take("serpapi"))) return { offer: null, quotaExhausted: true };
 

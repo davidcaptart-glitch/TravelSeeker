@@ -22,11 +22,15 @@ const MAX_CONNECTION_MIN = 20 * 60;
 const EVENING_FROM = "16:00";
 const MAX_HUBS = 8;
 
-// Aeropuertos grandes y bases de low cost por donde suele compensar enlazar en Europa.
+// Aeropuertos grandes y bases de low cost por donde suele compensar enlazar: Europa y, para los
+// vuelos largos, los grandes nudos de cada continente (Golfo, Estambul, Norteamérica, Latinoamérica, Asia…).
 const HUBS = [
   "BGY", "MXP", "STN", "LTN", "LGW", "CRL", "BRU", "AMS", "EIN", "BER", "CPH", "OSL", "ARN", "HEL", "FRA",
   "MUC", "VIE", "WAW", "WMI", "KRK", "BUD", "DUB", "FCO", "CIA", "BVA", "ORY", "CDG", "ZRH", "GVA", "LIS",
   "MAD", "RIX", "TLL", "PRG", "BLQ", "VCE", "NAP", "OPO", "AGP", "PMI", "GDN", "VNO", "BTS", "MLA", "ATH",
+  "IST", "SAW", "DXB", "DOH", "AUH", "KEF", "CMN", "CAI", "ADD", "NBO", "JNB",
+  "JFK", "EWR", "BOS", "MIA", "FLL", "ORD", "LAX", "YYZ", "YUL", "MEX", "CUN", "PTY", "BOG", "LIM", "GRU", "EZE", "SCL",
+  "SIN", "BKK", "KUL", "HKG", "ICN", "NRT", "PEK", "PVG", "DEL", "BOM", "SYD",
 ];
 
 type Day = Map<string, FlightLeg[]>; // fecha → tramos de ese día

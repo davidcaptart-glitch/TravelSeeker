@@ -1,3 +1,4 @@
+import { getT } from "@/i18n/server";
 import { runDueAlerts } from "@/lib/engine";
 
 // En Vercel cada llamada puede durar como mucho maxDuration segundos.
@@ -8,7 +9,7 @@ export const maxDuration = 300;
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
-    return new Response("No autorizado", { status: 401 });
+    return new Response((await getT("actions"))("unauthorized"), { status: 401 });
   }
   const lines: string[] = [];
   // Se deja margen para responder antes del límite; lo que no dé tiempo sigue en la próxima llamada.

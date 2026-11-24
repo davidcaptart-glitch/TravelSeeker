@@ -30,7 +30,12 @@ function dayLabel(d: string): string {
 }
 
 /** Resumen corto de las fechas de una alerta: rangos de días concretos o meses. */
-export function datesLabel(dates: { months: string[]; ranges?: { from: string; to: string; departAfter?: string; returnBy?: string }[] }): string {
+export function datesLabel(dates: {
+  months: string[];
+  dayTrip?: boolean;
+  ranges?: { from: string; to: string; departAfter?: string; returnBy?: string }[];
+}): string {
+  if (dates.dayTrip) return `En el día · ${datesLabel({ ...dates, dayTrip: false })}`;
   if (dates.ranges?.length) {
     return dates.ranges
       .map((r) => `${dayLabel(r.from)}${r.departAfter ? ` ${r.departAfter}` : ""} – ${dayLabel(r.to)}${r.returnBy ? ` ${r.returnBy}` : ""}`)

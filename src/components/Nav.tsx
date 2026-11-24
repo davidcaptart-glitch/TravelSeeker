@@ -4,26 +4,29 @@ import { Bookmark, Plus, Radar, Settings, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense } from "react";
+import { LanguagePicker } from "@/components/LanguagePicker";
+import { useT } from "@/i18n/client";
 
 const NEW = "/alerts/new";
 
 // Cinco destinos claros: lo que hay que decidir, lo guardado, crear, lo que vigilas y los ajustes.
 const TABS = [
-  { href: "/", label: "Ofertas", icon: Sparkles, match: (p: string) => p === "/" },
-  { href: "/saved", label: "Guardados", icon: Bookmark, match: (p: string) => p.startsWith("/saved") },
-  { href: NEW, label: "Nueva", icon: Plus, match: (p: string) => p === NEW },
+  { href: "/", label: "offers", icon: Sparkles, match: (p: string) => p === "/" },
+  { href: "/saved", label: "saved", icon: Bookmark, match: (p: string) => p.startsWith("/saved") },
+  { href: NEW, label: "new", icon: Plus, match: (p: string) => p === NEW },
   {
     href: "/alerts",
-    label: "Alertas",
+    label: "alerts",
     icon: Radar,
     match: (p: string) => p.startsWith("/alerts") && p !== NEW,
   },
-  { href: "/settings", label: "Ajustes", icon: Settings, match: (p: string) => p.startsWith("/settings") },
-];
+  { href: "/settings", label: "settings", icon: Settings, match: (p: string) => p.startsWith("/settings") },
+] as const;
 
 export function Logo() {
+  const t = useT("nav");
   return (
-    <Link href="/" className="flex items-center gap-2 text-[1.15rem] font-extrabold tracking-tight" aria-label="TravelSeeker, inicio">
+    <Link href="/" className="flex items-center gap-2 text-[1.15rem] font-extrabold tracking-tight" aria-label={t("home")}>
       {/* eslint-disable-next-line @next/next/no-img-element -- marca pequeña y estática */}
       <img src="/brand-mark.png" alt="" width={36} height={36} className="h-9 w-9" />
       <span>
@@ -35,23 +38,24 @@ export function Logo() {
 
 /** Enlaces de la cabecera (pantallas medianas y grandes). */
 function TopNavView({ path }: { path: string }) {
+  const t = useT("nav");
   return (
     <nav
       className="hidden items-center gap-1 rounded-full bg-surface/80 p-1 text-sm backdrop-blur-xl md:flex"
       style={{ boxShadow: "inset 0 1px 0 var(--highlight), 0 0 0 1px var(--hairline)" }}
     >
-      {TABS.filter((t) => t.href !== NEW).map((t) => (
+      {TABS.filter((tab) => tab.href !== NEW).map((tab) => (
         <Link
-          key={t.href}
-          href={t.href}
-          aria-current={t.match(path) ? "page" : undefined}
+          key={tab.href}
+          href={tab.href}
+          aria-current={tab.match(path) ? "page" : undefined}
           className="rounded-full px-4 py-2 font-semibold text-muted transition hover:text-foreground aria-[current=page]:bg-surface-3 aria-[current=page]:text-foreground"
         >
-          {t.label}
+          {t(tab.label)}
         </Link>
       ))}
-      <Link href={NEW} className="btn-primary ml-1 min-h-9">
-        <Plus className="h-4 w-4" /> Nueva alerta
+      <Link href={NEW} className="btn-primary ms-1 min-h-9">
+        <Plus className="h-4 w-4" /> {t("newAlert")}
       </Link>
     </nav>
   );
@@ -59,6 +63,7 @@ function TopNavView({ path }: { path: string }) {
 
 /** Barra inferior tipo app (móvil), con el botón "Nueva" destacado en el centro. */
 function BottomNavView({ path }: { path: string }) {
+  const tr = useT("nav");
   return (
     <nav className="fixed inset-x-0 z-30 px-3 md:hidden" style={{ bottom: "calc(0.6rem + env(safe-area-inset-bottom))" }}>
       <ul
@@ -88,7 +93,7 @@ function BottomNavView({ path }: { path: string }) {
                   >
                     <Icon className="h-6 w-6 transition group-hover:rotate-90" strokeWidth={2.6} />
                   </span>
-                  {t.label}
+                  {tr(t.label)}
                 </Link>
               </li>
             );
@@ -103,7 +108,7 @@ function BottomNavView({ path }: { path: string }) {
                 <span className={`grid h-8 w-12 place-items-center rounded-full transition ${on ? "bg-accent-soft text-cyan" : ""}`}>
                   <Icon className="h-[21px] w-[21px]" strokeWidth={on ? 2.2 : undefined} />
                 </span>
-                {t.label}
+                {tr(t.label)}
               </Link>
             </li>
           );
@@ -121,11 +126,15 @@ function LiveBottomNav() {
   return <BottomNavView path={usePathname()} />;
 }
 
+/** Cabecera: enlaces (pantallas medianas y grandes) y selector de idioma compacto (siempre visible). */
 export function TopNav() {
   return (
-    <Suspense fallback={<TopNavView path="" />}>
-      <LiveTopNav />
-    </Suspense>
+    <div className="flex items-center gap-2">
+      <Suspense fallback={<TopNavView path="" />}>
+        <LiveTopNav />
+      </Suspense>
+      <LanguagePicker compact />
+    </div>
   );
 }
 

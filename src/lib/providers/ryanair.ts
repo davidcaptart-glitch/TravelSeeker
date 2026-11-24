@@ -51,6 +51,8 @@ function toOffer(f: RyrFare, adults: number): FlightOffer {
     departTime: out.departureDate.slice(11, 16),
     arriveTime: out.arrivalDate.slice(11, 16),
     returnTime: back.departureDate.slice(11, 16),
+    returnArriveTime: back.arrivalDate.slice(11, 16),
+    returnArriveDate: back.arrivalDate.slice(0, 10),
     link: bookingLink(out.departureAirport.iataCode, out.arrivalAirport.iataCode, depart, ret, adults),
   };
 }
@@ -80,6 +82,74 @@ export async function ryanairFares(
     const json = (await res.json()) as { fares?: RyrFare[] };
     return (json.fares ?? []).filter((f) => f.outbound && f.inbound).map((f) => toOffer(f, adults));
   });
+}
+
+type RyrOneWay = { outbound: RyrLeg };
+
+/** Vuelos de solo ida de un día y una franja horaria; sin destino = el más barato a cada destino. */
+async function oneWayBand(origin: string, destination: string | null, day: string, from: string, to: string, adults: number): Promise<RyrLeg[]> {
+  return cached(`ryr:owband:${origin}:${destination ?? "*"}:${day}:${from}:${to}:${adults}`, 3 * 3600, async () => {
+    const p = new URLSearchParams({
+      departureAirportIataCode: origin,
+      outboundDepartureDateFrom: day,
+      outboundDepartureDateTo: day,
+      outboundDepartureTimeFrom: from,
+      outboundDepartureTimeTo: to,
+      adultPaxCount: String(adults),
+      currency: "EUR",
+      market: "es-es",
+    });
+    if (destination) p.set("arrivalAirportIataCode", destination);
+    const res = await fetch(`https://services-api.ryanair.com/farfnd/v4/oneWayFares?${p}`, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return [];
+    return (((await res.json()) as { fares?: RyrOneWay[] }).fares ?? []).map((f) => f.outbound).filter((l) => l?.price?.value);
+  }).catch(() => []);
+}
+
+// Franjas amplias para los viajes de un día: después se aplican las horas que haya elegido cada uno.
+const DAY_OUT_TO = "15:00";
+const DAY_BACK_FROM = "13:00";
+// Destinos por día a los que se busca la vuelta (los más baratos a la ida).
+const DAY_MAX_DESTS = 8;
+
+/**
+ * Viajes de un día con Ryanair: su buscador de ida y vuelta no da vuelos del mismo día, así que
+ * se combinan dos de solo ida: por la mañana a cada destino y por la tarde-noche de vuelta.
+ */
+export async function ryanairDayTrips(origin: string, destination: string | null, days: string[], adults = 1): Promise<FlightOffer[]> {
+  const out: FlightOffer[] = [];
+  for (const day of days) {
+    const outs = (await oneWayBand(origin, destination, day, "00:00", DAY_OUT_TO, adults))
+      .sort((a, b) => a.price.value - b.price.value)
+      .slice(0, DAY_MAX_DESTS);
+    const backs = await Promise.all(
+      outs.map((o) => oneWayBand(o.arrivalAirport.iataCode, origin, day, DAY_BACK_FROM, "23:59", adults).then((b) => b[0])),
+    );
+    outs.forEach((o, i) => {
+      const b = backs[i];
+      if (!b) return;
+      const dest = o.arrivalAirport.iataCode;
+      out.push({
+        provider: "ryanair",
+        cached: false,
+        origin,
+        destination: dest,
+        depart: day,
+        ret: day,
+        price: Math.round(o.price.value + b.price.value),
+        stops: 0,
+        durationMinutes: Math.max(30, Math.round((Date.parse(o.arrivalDate) - Date.parse(o.departureDate)) / 60000)),
+        airline: "Ryanair",
+        departTime: o.departureDate.slice(11, 16),
+        arriveTime: o.arrivalDate.slice(11, 16),
+        returnTime: b.departureDate.slice(11, 16),
+        returnArriveTime: b.arrivalDate.slice(11, 16),
+        returnArriveDate: b.arrivalDate.slice(0, 10),
+        link: bookingLink(origin, dest, day, day, adults),
+      });
+    });
+  }
+  return out;
 }
 
 /** Lanza las consultas de varias fechas con poca concurrencia para no saturar la API. */

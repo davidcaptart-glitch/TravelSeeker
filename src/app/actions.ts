@@ -9,9 +9,33 @@ import { notifyUser } from "@/lib/notify";
 import * as repo from "@/lib/repo";
 import { currentUserId } from "@/lib/session";
 import { USER_COOKIE, USER_COOKIE_OPTIONS } from "@/lib/identity";
+import { isLocale, LOCALE_COOKIE } from "@/i18n/config";
+import { getLocale, getMoney, getT } from "@/i18n/server";
+import { CURRENCY_COOKIE, isCurrency } from "@/lib/currency";
 import { alertConfigSchema, MATCH_STATUSES, type MatchStatus } from "@/lib/types";
 
 export type FormState = { error?: string } | undefined;
+
+// Las páginas viven bajo /[lang]: se refrescan todas (en todos los idiomas).
+function refreshPages() {
+  revalidatePath("/[lang]", "layout");
+}
+
+/** Cambia la moneda en la que ves los precios (en este dispositivo y en tus avisos). */
+export async function setCurrency(currency: string) {
+  if (!isCurrency(currency)) return;
+  (await cookies()).set({ name: CURRENCY_COOKIE, value: currency, path: "/", maxAge: 60 * 60 * 24 * 365 * 5, sameSite: "lax" });
+  await repo.setUserCurrency(await currentUserId(), currency);
+  refreshPages();
+}
+
+/** Cambia el idioma de la app (se guarda en este dispositivo y en tu usuario, para los avisos). */
+export async function setLanguage(locale: string) {
+  if (!isLocale(locale)) return;
+  (await cookies()).set({ name: LOCALE_COOKIE, value: locale, path: "/", maxAge: 60 * 60 * 24 * 365 * 5, sameSite: "lax" });
+  await repo.setUserLocale(await currentUserId(), locale);
+  refreshPages();
+}
 
 export async function saveAlert(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await currentUserId();
@@ -20,16 +44,18 @@ export async function saveAlert(_prev: FormState, formData: FormData): Promise<F
   try {
     raw = JSON.parse(String(formData.get("config")));
   } catch {
-    return { error: "Formulario no válido" };
+    return { error: (await getT("actions"))("invalidForm") };
   }
   const parsed = alertConfigSchema.safeParse(raw);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     return { error: `${issue.path.join(" › ")}: ${issue.message}` };
   }
+  await repo.setUserLocale(userId, await getLocale());
+  await repo.setUserCurrency(userId, (await getMoney()).currency);
   let alertId = id;
   if (id) {
-    if (!(await repo.getAlert(id, userId))) return { error: "Alerta no encontrada" };
+    if (!(await repo.getAlert(id, userId))) return { error: (await getT("actions"))("alertNotFound") };
     await repo.updateAlertConfig(id, userId, parsed.data);
   } else {
     alertId = await repo.createAlert(userId, parsed.data);
@@ -37,7 +63,7 @@ export async function saveAlert(_prev: FormState, formData: FormData): Promise<F
   // Primera búsqueda inmediata para que el usuario vea resultados sin esperar al worker.
   const alert = await repo.getAlert(alertId!, userId);
   if (alert) await runAlert(alert).catch((err) => console.error(err));
-  revalidatePath("/");
+  refreshPages();
   redirect(`/alerts/${alertId}`);
 }
 
@@ -47,7 +73,7 @@ export async function runNow(id: string) {
   if (!alert) return;
   await runAlert(alert);
   await repo.markMatchesSeen(id);
-  revalidatePath(`/alerts/${id}`);
+  refreshPages();
 }
 
 export async function decide(matchId: string, status: MatchStatus) {
@@ -55,24 +81,19 @@ export async function decide(matchId: string, status: MatchStatus) {
   if (!MATCH_STATUSES.includes(status)) return;
   const alertId = await repo.decideMatch(matchId, userId, status);
   if (!alertId) return;
-  revalidatePath("/");
-  revalidatePath("/saved");
-  revalidatePath("/alerts");
-  revalidatePath(`/alerts/${alertId}`);
+  refreshPages();
 }
 
 export async function toggleAlert(id: string, active: boolean) {
   const userId = await currentUserId();
   await repo.setAlertActive(id, userId, active);
-  revalidatePath("/");
-  revalidatePath("/alerts");
-  revalidatePath(`/alerts/${id}`);
+  refreshPages();
 }
 
 export async function removeAlert(id: string) {
   const userId = await currentUserId();
   await repo.deleteAlert(id, userId);
-  revalidatePath("/");
+  refreshPages();
   redirect("/");
 }
 
@@ -89,13 +110,13 @@ export async function saveSettings(_prev: FormState, formData: FormData): Promis
     holidaysCountry: String(formData.get("holidaysCountry") ?? "ES").toUpperCase(),
     holidaysRegion: String(formData.get("holidaysRegion") ?? "").toUpperCase(),
   });
-  if (!parsed.success) return { error: "Revisa el email o el código de región (p. ej. ES-CT)" };
+  if (!parsed.success) return { error: (await getT("actions"))("settingsInvalid") };
   await repo.updateUser(userId, {
     email: parsed.data.email || null,
     holidaysCountry: parsed.data.holidaysCountry,
     holidaysRegion: parsed.data.holidaysRegion || null,
   });
-  revalidatePath("/settings");
+  refreshPages();
   return {};
 }
 
@@ -104,10 +125,11 @@ export async function saveSettings(_prev: FormState, formData: FormData): Promis
  * Solo se aceptan identificadores con alertas, para no crear usuarios vacíos por error.
  */
 export async function linkDevice(_prev: FormState, formData: FormData): Promise<FormState> {
+  const t = await getT("actions");
   const id = String(formData.get("userId") ?? "").trim().toLowerCase();
-  if (!z.uuid().safeParse(id).success) return { error: "Ese identificador no es válido." };
-  if (id === (await currentUserId())) return { error: "Ya estás usando ese identificador." };
-  if (!(await repo.userHasAlerts(id))) return { error: "No hay alertas con ese identificador." };
+  if (!z.uuid().safeParse(id).success) return { error: t("linkInvalid") };
+  if (id === (await currentUserId())) return { error: t("linkSame") };
+  if (!(await repo.userHasAlerts(id))) return { error: t("linkNoAlerts") };
   (await cookies()).set({ name: USER_COOKIE, value: id, ...USER_COOKIE_OPTIONS });
   redirect("/");
 }
@@ -119,6 +141,8 @@ export async function subscribePush(sub: unknown) {
   const parsed = pushSchema.safeParse(sub);
   if (!parsed.success) return { ok: false };
   await repo.savePushSubscription(userId, parsed.data);
+  await repo.setUserLocale(userId, await getLocale());
+  await repo.setUserCurrency(userId, (await getMoney()).currency);
   return { ok: true };
 }
 
@@ -130,6 +154,7 @@ export async function unsubscribePush(endpoint: string) {
 
 export async function sendTestNotification() {
   const userId = await currentUserId();
-  const n = await notifyUser(userId, { title: "TravelSeeker", body: "Las notificaciones funcionan ✈️", path: "/" });
+  const t = await getT("actions");
+  const n = await notifyUser(userId, { title: "TravelSeeker", body: t("testBody"), path: "/" });
   return { delivered: n };
 }

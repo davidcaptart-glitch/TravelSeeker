@@ -36,10 +36,18 @@ const I = {
   lat: col("latitude_deg"),
   lon: col("longitude_deg"),
   country: col("iso_country"),
+  continent: col("continent"),
   city: col("municipality"),
   scheduled: col("scheduled_service"),
   iata: col("iata_code"),
 };
+
+// Región del mundo para «Sorpréndeme»: Latinoamérica incluye México, Centroamérica y el Caribe.
+const NORTH_AMERICA = new Set(["US", "CA", "GL", "BM", "PM"]);
+function region(continent: string, country: string): string {
+  if (continent === "NA") return NORTH_AMERICA.has(country) ? "northamerica" : "latam";
+  return { EU: "europe", AF: "africa", AS: "asia", OC: "oceania", SA: "latam", AN: "antarctica" }[continent] ?? "other";
+}
 
 const airports = [];
 for (const line of lines.slice(1)) {
@@ -55,6 +63,7 @@ for (const line of lines.slice(1)) {
     lat: Math.round(Number(r[I.lat]) * 1e4) / 1e4,
     lon: Math.round(Number(r[I.lon]) * 1e4) / 1e4,
     large: type === "large_airport",
+    region: region(r[I.continent], r[I.country]),
   });
 }
 

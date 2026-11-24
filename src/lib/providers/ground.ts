@@ -1,7 +1,7 @@
 import { cached } from "../db";
 import { addDays, diffDays, toISO } from "../dates";
 import { haversineKm, nearestStation } from "../geo";
-import { legCost, MODE_LABELS, taxiCost } from "../fares";
+import { legCost, MODE_LABELS, taxiFare } from "../fares";
 import type { GroundOption, LastMile, TransitLeg } from "../types";
 import { flixCityNear, flixTrips, pickTrip, type FlixCity } from "./flixbus";
 
@@ -28,18 +28,40 @@ function proxyDate(date: string): string {
 
 type MotisLeg = {
   mode: string;
-  from: { name: string; lat: number; lon: number };
-  to: { name: string; lat: number; lon: number };
+  from: { name: string; lat: number; lon: number; tz?: string };
+  to: { name: string; lat: number; lon: number; tz?: string };
   duration: number;
   distance?: number;
+  startTime?: string;
+  endTime?: string;
   routeShortName?: string;
   agencyName?: string;
+  agencyUrl?: string;
+  routeUrl?: string;
+  routeColor?: string;
+  routeTextColor?: string;
+  headsign?: string;
+  ticketUrls?: { web?: string };
 };
+
+/** Hora local "HH:MM" de un instante UTC en la zona horaria de la parada. */
+function localTime(iso?: string, tz?: string): string | undefined {
+  if (!iso) return undefined;
+  try {
+    return new Intl.DateTimeFormat("es-ES", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: tz ?? "UTC" }).format(new Date(iso));
+  } catch {
+    return undefined;
+  }
+}
+
+const httpUrl = (u?: string) => (u && /^https?:\/\//.test(u) ? u : undefined);
+const hex = (c?: string) => (c && /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : undefined);
 type MotisItinerary = { duration: number; transfers: number; legs: MotisLeg[] };
 
-async function transitous(from: Pt, to: Pt, date: string, hourUtc: number): Promise<MotisItinerary[]> {
-  const time = `${proxyDate(date)}T${String(hourUtc).padStart(2, "0")}:00:00Z`;
-  const key = `transit:${from.lat.toFixed(3)},${from.lon.toFixed(3)}>${to.lat.toFixed(3)},${to.lon.toFixed(3)}:${new Date(time).getUTCDay()}:${hourUtc}`;
+async function transitous(from: Pt, to: Pt, date: string, hourUtc: number | string): Promise<MotisItinerary[]> {
+  const hhmm = typeof hourUtc === "number" ? `${String(hourUtc).padStart(2, "0")}:00` : hourUtc;
+  const time = `${proxyDate(date)}T${hhmm}:00Z`;
+  const key = `transit:v2:${from.lat.toFixed(3)},${from.lon.toFixed(3)}>${to.lat.toFixed(3)},${to.lon.toFixed(3)}:${new Date(time).getUTCDay()}:${hhmm}`;
   return cached(key, 7 * 86400, async () => {
     try {
       const params = new URLSearchParams({
@@ -48,15 +70,66 @@ async function transitous(from: Pt, to: Pt, date: string, hourUtc: number): Prom
         time,
         maxPreTransitTime: "1200",
         maxPostTransitTime: "1200",
+        // Todo menos aviones (los horarios oficiales también incluyen vuelos).
+        transitModes: "TRAM,SUBWAY,FERRY,BUS,COACH,RAIL,FUNICULAR,AERIAL_LIFT,CABLE_CAR",
       });
       const res = await fetch(`https://api.transitous.org/api/v5/plan?${params}`, { headers: UA });
       if (!res.ok) return [];
       const json = (await res.json()) as { itineraries?: MotisItinerary[] };
-      return json.itineraries ?? [];
+      return (json.itineraries ?? []).filter((it) => !it.legs.some((l) => /AIR|FLIGHT/.test(l.mode)));
     } catch {
       return [];
     }
   });
+}
+
+type MotisStop = { name: string; lat: number; lon: number; tz?: string; importance?: number; modes?: string[] };
+
+const AIRPORT_WORDS =
+  /air ?port|aeropuerto|aeroport|aéroport|aeroporto|flughafen|lentoasema|flygplats|lufthavn|lotnisko|letiště|letisko|repülőtér|zračna luka|luchthaven|aerodrom|havaalanı|terminal|\bT[1-5]\b/i;
+
+/**
+ * Paradas reales de transporte público del aeropuerto (terminales, estación de tren o metro), de los
+ * horarios oficiales. El punto de referencia del aeropuerto suele caer en las pistas, lejos de cualquier parada.
+ */
+export async function airportStops(lat: number, lon: number): Promise<MotisStop[]> {
+  return cached(`airport-stops:v2:${lat.toFixed(3)},${lon.toFixed(3)}`, 30 * 86400, async () => {
+    try {
+      const d = 0.035;
+      const box = `min=${lat - d},${lon - d * 1.5}&max=${lat + d},${lon + d * 1.5}`;
+      const res = await fetch(`https://api.transitous.org/api/v1/map/stops?${box}`, { headers: UA, signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) return [];
+      const all = ((await res.json()) as MotisStop[]).filter(
+        (s) => AIRPORT_WORDS.test(s.name) && (s.modes ?? []).some((m) => !/AIR|FLIGHT/.test(m)),
+      );
+      // Antes las de metro, tren o bus urbano que las de autocar de larga distancia; luego las más importantes.
+      const local = (s: MotisStop) => (s.modes ?? []).some((m) => m !== "COACH");
+      all.sort((a, b) => Number(local(b)) - Number(local(a)) || (b.importance ?? 0) - (a.importance ?? 0));
+      const picked: MotisStop[] = [];
+      for (const s of all) {
+        if (picked.length >= 3) break;
+        if (picked.every((p) => haversineKm(p.lat, p.lon, s.lat, s.lon) > 0.3)) picked.push(s);
+      }
+      return picked;
+    } catch {
+      return [];
+    }
+  });
+}
+
+/** Hora UTC "HH:MM" de una hora local en una zona horaria, con los cambios de horario incluidos. */
+function localToUtc(date: string, hhmm: string, tz: string): string {
+  const guess = new Date(`${date}T${hhmm}:00Z`);
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(guess);
+    const [h, m] = parts.split(":").map(Number);
+    const offset = h * 60 + m - (guess.getUTCHours() * 60 + guess.getUTCMinutes());
+    const norm = ((offset + 12 * 60) % (24 * 60) + 24 * 60) % (24 * 60) - 12 * 60;
+    const t = new Date(guess.getTime() - norm * 60_000);
+    return t.toISOString().slice(11, 16);
+  } catch {
+    return hhmm;
+  }
 }
 
 export async function drive(from: Pt, to: Pt): Promise<{ km: number; minutes: number }> {
@@ -111,6 +184,19 @@ function toOption(it: MotisItinerary, from: Pt, to: Pt, country?: string, airpor
       minutes: Math.round(l.duration / 60),
       km: Math.round(km * 10) / 10,
       cost,
+      ...(isTransit
+        ? {
+            departTime: localTime(l.startTime, l.from.tz),
+            arriveTime: localTime(l.endTime, l.to.tz),
+            agencyUrl: httpUrl(l.agencyUrl),
+            routeUrl: httpUrl(l.routeUrl),
+            // Enlace de compra con el viaje ya elegido (solo si la fecha consultada es la real).
+            ticketUrl: httpUrl(l.ticketUrls?.web),
+            headsign: l.headsign,
+            color: hex(l.routeColor),
+            textColor: hex(l.routeTextColor),
+          }
+        : {}),
     };
   });
   const transitLegs = legs.filter((l) => l.mode !== "WALK");
@@ -215,14 +301,16 @@ async function flixOption(
 
 async function taxiOption(from: Pt, to: Pt, country?: string, airportIata?: string): Promise<GroundOption> {
   const d = await drive(from, to);
-  const cost = taxiCost(country, d.km, d.minutes, airportIata);
+  const fare = taxiFare(country, d.km, d.minutes, airportIata);
   return {
     kind: "taxi",
     label: "Taxi",
     minutes: d.minutes,
-    cost,
-    legs: [{ mode: "TAXI", from: from.label, to: to.label, minutes: d.minutes, km: d.km, cost }],
-    estimated: cost > 0,
+    cost: fare.min,
+    costMax: fare.max,
+    fixedFare: fare.fixed,
+    legs: [{ mode: "TAXI", from: from.label, to: to.label, minutes: d.minutes, km: d.km, cost: fare.min }],
+    estimated: !fare.fixed,
     mapsLink: mapsLink(from, to, "driving"),
   };
 }
@@ -236,7 +324,7 @@ export async function groundOptions(
   to: Pt,
   opts: {
     date: string;
-    hourUtc?: number;
+    hourUtc?: number | string;
     // Hora local mínima de salida para el autocar (p. ej. llegada del vuelo + 1 h).
     notBefore?: string;
     country?: string;
@@ -247,14 +335,30 @@ export async function groundOptions(
 ): Promise<GroundOption[]> {
   const hour = opts.hourUtc ?? 9;
   const out: GroundOption[] = [];
-  const direct = await transitous(from, to, opts.date, hour);
-  const best = direct.sort((a, b) => a.duration - b.duration).slice(0, 2);
-  for (const it of best) out.push(await priceFlixLegs(it, toOption(it, from, to, opts.country, opts.airportIata), opts.date));
+  let direct = await transitous(from, to, opts.date, hour);
+  // Desde un aeropuerto sin paradas cerca del punto de referencia: se sale desde sus paradas reales.
+  if (!direct.length && opts.airportIata) {
+    for (const s of await airportStops(from.lat, from.lon)) {
+      direct = await transitous({ label: from.label, lat: s.lat, lon: s.lon }, to, opts.date, hour);
+      if (direct.length) break;
+    }
+  }
+  // Fuera rutas desproporcionadas (vueltas enormes): como mucho 3 h o 4 veces lo que se tarda en coche.
+  const roadKm = haversineKm(from.lat, from.lon, to.lat, to.lon) * 1.3;
+  const maxSec = Math.max(3 * 3600, (roadKm / 50) * 3600 * 4);
+  const best = direct.filter((it) => it.duration <= maxSec).sort((a, b) => a.duration - b.duration).slice(0, 2);
+  // Con horarios de un día equivalente, el enlace de compra llevaría a otra fecha: se quita.
+  const sameDay = proxyDate(opts.date) === opts.date;
+  for (const it of best) {
+    const o = toOption(it, from, to, opts.country, opts.airportIata);
+    if (!sameDay) for (const l of o.legs) delete l.ticketUrl;
+    out.push(await priceFlixLegs(it, o, opts.date));
+  }
 
   // Autocar FlixBus con precio real para trayectos largos (si no lo ha propuesto ya Transitous).
   const km = haversineKm(from.lat, from.lon, to.lat, to.lon);
   if (km > 50 && !opts.noFlix && !out.some((o) => o.legs.some((l) => isFlix(l.agency) && l.realPrice))) {
-    const flix = await flixOption(from, to, { ...opts, hourUtc: hour }).catch(() => null);
+    const flix = await flixOption(from, to, { ...opts, hourUtc: typeof hour === "number" ? hour : Number(hour.slice(0, 2)) }).catch(() => null);
     if (flix) out.push(flix);
   }
 
@@ -273,6 +377,7 @@ export async function groundOptions(
       const it = (await transitous(p.a, p.b, opts.date, hour)).sort((x, y) => x.duration - y.duration)[0];
       if (!it) continue;
       const mid = toOption(it, p.a, p.b, opts.country);
+      if (!sameDay) for (const l of mid.legs) delete l.ticketUrl;
       const first = p.taxiBefore ? await taxiOption(from, p.a, opts.country, opts.airportIata) : null;
       const last = p.taxiAfter ? await taxiOption(p.b, to, opts.country) : null;
       const parts = [first, mid, last].filter((x): x is GroundOption => x !== null);
@@ -303,7 +408,14 @@ export async function lastMile(
   arriveTime?: string,
 ): Promise<LastMile> {
   const from = { label: `Aeropuerto ${airport.iata}`, lat: airport.lat, lon: airport.lon };
-  const hour = arriveTime ? Math.min(22, Math.max(6, Number(arriveTime.slice(0, 2)))) : 10;
+  // Se busca desde media hora después de aterrizar, en la hora local del aeropuerto.
+  const tz = (await airportStops(airport.lat, airport.lon))[0]?.tz;
+  let hour: number | string = arriveTime ? Math.min(22, Math.max(6, Number(arriveTime.slice(0, 2)))) : 10;
+  if (arriveTime && tz) {
+    const [h, m] = arriveTime.split(":").map(Number);
+    const t = Math.min(23 * 60, h * 60 + m + 30);
+    hour = localToUtc(date, `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`, tz);
+  }
   // El autocar tiene que salir al menos una hora después de aterrizar.
   const notBefore = arriveTime ? `${String(Math.min(23, Number(arriveTime.slice(0, 2)) + 1)).padStart(2, "0")}:${arriveTime.slice(3, 5)}` : undefined;
   const options = await groundOptions(from, target, {

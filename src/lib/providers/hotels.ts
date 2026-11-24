@@ -1,8 +1,10 @@
 import { cached, peekCache } from "../db";
+import { recordHotels } from "../observations";
 import { take } from "../quota";
 import type { AlertConfig, HotelOffer, Place } from "../types";
 import { ALLOW_MOCK, hash, timeBucket } from "./mock";
 
+import { bookingLinksFor, googleHotelsLink } from "./hotelLinks";
 import { xoteloHotels } from "./xotelo";
 
 // Alojamiento: primero Xotelo (gratis, sin cupo). Si la ciudad no está, SerpApi Google Hotels
@@ -114,6 +116,12 @@ async function serpHotels(
           lon: p.gps_coordinates?.longitude,
           link: p.link,
           image: p.images?.[0]?.thumbnail,
+          // Web del propio alojamiento (la que da Google) y, además, las agencias con fechas y personas puestas.
+          bookingLinks: [
+            ...(p.link ? [{ label: "official", url: p.link, official: true }] : []),
+            ...bookingLinksFor({ name: p.name, city: place.label.split(",")[0], checkIn, checkOut, guests }, []),
+            { label: "Google Hotels", url: googleHotelsLink({ name: p.name, city: place.label.split(",")[0], checkIn, checkOut, guests }) },
+          ],
         } satisfies HotelOffer;
       });
   });
@@ -148,6 +156,8 @@ export async function searchHotels(
     }
   }
   for (const o of offers) if (!o.total) o.total = o.pricePerNight * nights;
+  // Histórico de trabajo: todos los alojamientos vistos con su precio por noche.
+  await recordHotels(offers, { city: place.label.split(",")[0], checkIn, nights, guests });
   return {
     offers: offers.filter((o) => hotelMatches(o, criteria)).sort((a, b) => a.total - b.total),
     quotaExhausted,

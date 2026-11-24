@@ -3,7 +3,8 @@
 import { RefreshCw, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { LATEST } from "@/lib/changelog";
+import { useT } from "@/i18n/client";
+import { LATEST_ID, latestIn } from "@/lib/changelog";
 
 const MY_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "local";
 const SEEN_KEY = "ts_seen_release";
@@ -34,6 +35,7 @@ function LiveUpdates() {
   useEffect(() => {
     busyRef.current = busyForm;
   }, [busyForm]);
+  const t = useT("changelog");
   const [ready, setReady] = useState(false);
   const [news, setNews] = useState(false);
 
@@ -71,11 +73,11 @@ function LiveUpdates() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- preferencia guardada en el navegador
-    if (read(SEEN_KEY) !== LATEST.id) setNews(true);
+    if (read(SEEN_KEY) !== LATEST_ID) setNews(true);
   }, []);
 
   const close = () => {
-    write(SEEN_KEY, LATEST.id);
+    write(SEEN_KEY, LATEST_ID);
     setNews(false);
   };
 
@@ -84,9 +86,9 @@ function LiveUpdates() {
       {ready && (
         <div className="fixed inset-x-3 top-3 z-50 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-surface-3 p-3 text-sm shadow-2xl" role="status">
           <RefreshCw className="h-4 w-4 shrink-0 text-cyan" />
-          <span className="flex-1">Hay una versión nueva. Se aplicará al salir de este formulario.</span>
+          <span className="flex-1">{t("newVersion")}</span>
           <button type="button" className="btn-ghost min-h-9 px-3" onClick={() => window.location.reload()}>
-            Ahora
+            {t("reloadNow")}
           </button>
         </div>
       )}
@@ -105,6 +107,8 @@ export function Updates() {
 }
 
 function WhatsNew({ onClose }: { onClose: () => void }) {
+  const t = useT("changelog");
+  const latest = latestIn(t);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -122,17 +126,17 @@ function WhatsNew({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="eyebrow-pill">Novedades</p>
+            <p className="eyebrow-pill">{t("whatsNew")}</p>
             <h2 id="whatsnew-title" className="mt-3 text-xl leading-tight font-extrabold tracking-tight">
-              {LATEST.title}
+              {latest.title}
             </h2>
           </div>
-          <button type="button" className="-m-1 rounded-full p-2 text-muted hover:bg-surface-2" aria-label="Cerrar" onClick={onClose}>
+          <button type="button" className="-m-1 rounded-full p-2 text-muted hover:bg-surface-2" aria-label={t("close")} onClick={onClose}>
             <X className="h-5 w-5" />
           </button>
         </div>
         <ul className="mt-5 space-y-4">
-          {LATEST.items.map(({ icon: Icon, title, text }) => (
+          {latest.items.map(({ icon: Icon, title, text }) => (
             <li key={title} className="flex items-start gap-3">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-accent-soft text-cyan">
                 <Icon className="h-5 w-5" />
@@ -145,7 +149,7 @@ function WhatsNew({ onClose }: { onClose: () => void }) {
           ))}
         </ul>
         <button type="button" className="btn-primary mt-6 w-full" onClick={onClose}>
-          ¡Entendido!
+          {t("gotIt")}
         </button>
       </section>
     </div>

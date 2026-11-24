@@ -1,3 +1,5 @@
+import { isCurrency } from "./currency";
+import { isLocale, type Locale } from "@/i18n/config";
 import { randomUUID } from "node:crypto";
 import { exec, query } from "./db";
 import type { Alert, AlertConfig, Match, MatchData, MatchStatus, PricePoint, RunSummary } from "./types";
@@ -22,7 +24,7 @@ function toAlert(r: AlertRow): Alert {
   };
 }
 
-export type User = { id: string; email: string | null; holidaysCountry: string; holidaysRegion: string | null };
+export type User = { id: string; email: string | null; holidaysCountry: string; holidaysRegion: string | null; locale: Locale; currency: string };
 
 /** true si el usuario existe y tiene al menos una alerta (para vincular otro dispositivo). */
 export async function userHasAlerts(id: string): Promise<boolean> {
@@ -32,11 +34,30 @@ export async function userHasAlerts(id: string): Promise<boolean> {
 
 export async function ensureUser(id: string): Promise<User> {
   await exec("INSERT OR IGNORE INTO users (id) VALUES (?)", [id]);
-  const [u] = await query<{ id: string; email: string | null; holidays_country: string; holidays_region: string | null }>(
-    "SELECT id, email, holidays_country, holidays_region FROM users WHERE id = ?",
+  const [u] = await query<{ id: string; email: string | null; holidays_country: string; holidays_region: string | null; locale: string | null; currency: string | null }>(
+    "SELECT id, email, holidays_country, holidays_region, locale, currency FROM users WHERE id = ?",
     [id],
   );
-  return { id: u.id, email: u.email, holidaysCountry: u.holidays_country ?? "ES", holidaysRegion: u.holidays_region };
+  return {
+    id: u.id,
+    email: u.email,
+    holidaysCountry: u.holidays_country ?? "ES",
+    holidaysRegion: u.holidays_region,
+    // Los usuarios de antes de los idiomas usaban la app en español.
+    locale: isLocale(u.locale) ? u.locale : "es",
+    currency: isCurrency(u.currency) ? u.currency : "EUR",
+  };
+}
+
+/** Guarda la moneda del usuario (para los avisos en segundo plano). */
+export async function setUserCurrency(id: string, currency: string) {
+  if (!isCurrency(currency)) return;
+  await exec("UPDATE users SET currency = ? WHERE id = ? AND (currency IS NULL OR currency <> ?)", [currency, id, currency]);
+}
+
+/** Guarda el idioma del usuario (para los avisos que se le envían en segundo plano). */
+export async function setUserLocale(id: string, locale: Locale) {
+  await exec("UPDATE users SET locale = ? WHERE id = ? AND (locale IS NULL OR locale <> ?)", [locale, id, locale]);
 }
 
 export async function updateUser(id: string, data: { email: string | null; holidaysCountry: string; holidaysRegion: string | null }) {

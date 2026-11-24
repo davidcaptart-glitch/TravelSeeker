@@ -14,6 +14,9 @@ export type Place = z.infer<typeof placeSchema>;
 
 export const DESTINATION_THEMES = ["playa", "ciudad", "montaña", "nieve", "cultura", "fiesta", "naturaleza"] as const;
 export const HOTEL_TYPES = ["hotel", "apartment", "hostel"] as const;
+// Regiones del mundo para «Sorpréndeme» (Latinoamérica incluye México, Centroamérica y el Caribe).
+export const REGIONS = ["europe", "northamerica", "latam", "africa", "asia", "oceania"] as const;
+export type Region = (typeof REGIONS)[number] | "antarctica" | "other";
 
 export const alertConfigSchema = z.object({
   name: z.string().min(1).max(80),
@@ -26,6 +29,8 @@ export const alertConfigSchema = z.object({
       kind: z.literal("anywhere"),
       themes: z.array(z.enum(DESTINATION_THEMES)).default([]),
       countries: z.array(z.string().length(2)).default([]),
+      // Solo estas regiones del mundo (vacío = cualquiera).
+      regions: z.array(z.enum(REGIONS)).default([]),
       // Países que nunca deben salir como destino (p. ej. el tuyo).
       excludeCountries: z.array(z.string().length(2)).default([]),
     }),
@@ -44,6 +49,13 @@ export const alertConfigSchema = z.object({
     excludeDates: z.array(isoDate).default([]),
     useHolidays: z.boolean().default(true),
     departEveningBefore: z.boolean().default(true),
+    // Viaje de un día: ida a primera hora y vuelta por la noche el mismo día, sin alojamiento.
+    dayTrip: z.boolean().optional(),
+    // Horas del viaje de un día: salida deseada, hora de llegada de vuelta a casa y margen (± horas).
+    // Una llegada antes de las 04:00 cuenta como pasada la medianoche (p. ej. 00:30).
+    dayTripTimes: z
+      .object({ depart: hhmm, arriveHome: hhmm, flexHours: z.number().min(0).max(6).default(1) })
+      .optional(),
     minNights: z.number().int().min(1).max(30).default(1),
     maxNights: z.number().int().min(1).max(30).default(4),
     // Días concretos: si hay rangos, se busca solo dentro de ellos (los meses se calculan a partir de ellos).
@@ -137,6 +149,9 @@ export type FlightOffer = {
   arriveTime?: string;
   // Hora de salida del vuelo de vuelta (si se conoce).
   returnTime?: string;
+  // Hora de llegada del vuelo de vuelta (si se conoce) y su fecha si es otro día.
+  returnArriveTime?: string;
+  returnArriveDate?: string;
   link?: string;
   // Viaje combinado: billetes separados y ciudades donde se enlaza.
   legs?: FlightLeg[];
@@ -158,6 +173,10 @@ export type HotelOffer = {
   // Rango de precio por noche habitual del alojamiento (según TripAdvisor).
   usualMin?: number;
   usualMax?: number;
+  // Dónde reservarlo, con fechas y personas ya puestas (la más barata primero) y la ficha con opiniones.
+  // label "official" = web oficial del hotel (se abre Google Hotels, que la enlaza).
+  bookingLinks?: { label: string; url: string; pricePerNight?: number; official?: boolean }[];
+  reviewsLink?: string;
 };
 
 export type TransitLeg = {
@@ -172,6 +191,14 @@ export type TransitLeg = {
   // Precio consultado al operador para esa fecha (si no, es una estimación).
   realPrice?: boolean;
   departTime?: string;
+  arriveTime?: string;
+  // Datos del operador (de los horarios oficiales): web, página de la línea, compra del billete y colores.
+  agencyUrl?: string;
+  routeUrl?: string;
+  ticketUrl?: string;
+  headsign?: string;
+  color?: string;
+  textColor?: string;
 };
 
 export type GroundOption = {
@@ -184,6 +211,9 @@ export type GroundOption = {
   estimated: boolean;
   mapsLink?: string;
   bookingLinks?: { label: string; url: string }[];
+  // Taxi: horquilla de precio y si es una tarifa fija oficial del aeropuerto.
+  costMax?: number;
+  fixedFare?: boolean;
 };
 
 export type LastMile = {
@@ -235,6 +265,19 @@ export type RunSummary = {
   cheapestSimilar?: number;
   // Tendencia del mercado: lo más barato de cada mes (ida + vuelta estimada), próximos 12 meses.
   market?: { route: string; months: { month: string; price: number }[] };
+  // Histórico guardado de la ruta (todos los precios vistos en viajes parecidos) y qué tal es el mejor de ahora.
+  routeHistory?: {
+    samples: number;
+    days: number;
+    since: string;
+    min: number;
+    p25: number;
+    median: number;
+    minDepart: string;
+    // Proporción de precios guardados más caros que el mejor de ahora (0–1).
+    bestShare?: number;
+    best?: number;
+  };
   notes: string[];
 };
 

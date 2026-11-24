@@ -54,6 +54,47 @@ CREATE TABLE IF NOT EXISTS price_history (
   total REAL
 );
 CREATE INDEX IF NOT EXISTS price_history_alert ON price_history (alert_id, at);
+-- Histórico de trabajo: cada precio de vuelo visto en cualquier búsqueda (el más bajo de cada día y fuente).
+-- ret = '' para vuelos de solo ida. live = 1 si es precio consultado al momento (no de caché de terceros).
+CREATE TABLE IF NOT EXISTS fare_obs (
+  origin TEXT NOT NULL,
+  destination TEXT NOT NULL,
+  depart TEXT NOT NULL,
+  ret TEXT NOT NULL DEFAULT '',
+  provider TEXT NOT NULL,
+  day TEXT NOT NULL,
+  price REAL NOT NULL,
+  airline TEXT,
+  stops INTEGER,
+  depart_time TEXT,
+  return_time TEXT,
+  duration INTEGER,
+  live INTEGER NOT NULL DEFAULT 0,
+  link TEXT,
+  seen_at TEXT NOT NULL,
+  PRIMARY KEY (origin, destination, depart, ret, provider, day)
+);
+CREATE INDEX IF NOT EXISTS fare_obs_route ON fare_obs (origin, destination, depart);
+CREATE INDEX IF NOT EXISTS fare_obs_day ON fare_obs (day);
+-- Histórico de alojamientos: precio por noche visto para cada alojamiento y fechas.
+CREATE TABLE IF NOT EXISTS hotel_obs (
+  hotel_key TEXT NOT NULL,
+  check_in TEXT NOT NULL,
+  nights INTEGER NOT NULL,
+  guests INTEGER NOT NULL,
+  day TEXT NOT NULL,
+  name TEXT NOT NULL,
+  city TEXT,
+  lat REAL,
+  lon REAL,
+  price_per_night REAL NOT NULL,
+  source TEXT,
+  rating REAL,
+  seen_at TEXT NOT NULL,
+  PRIMARY KEY (hotel_key, check_in, nights, guests, day)
+);
+CREATE INDEX IF NOT EXISTS hotel_obs_place ON hotel_obs (city, check_in);
+CREATE INDEX IF NOT EXISTS hotel_obs_day ON hotel_obs (day);
 CREATE TABLE IF NOT EXISTS api_usage (
   provider TEXT NOT NULL,
   period TEXT NOT NULL,
@@ -69,6 +110,11 @@ async function migrate(c: Client) {
     // new: pendiente de decidir · saved: guardado para más tarde · dismissed: descartado · booked: lo has cogido.
     await c.execute("ALTER TABLE matches ADD COLUMN status TEXT NOT NULL DEFAULT 'new'");
   }
+  // Idioma de cada usuario, para escribirle los avisos en su idioma.
+  const userCols = await c.execute("PRAGMA table_info(users)");
+  if (!userCols.rows.some((r) => r.name === "locale")) await c.execute("ALTER TABLE users ADD COLUMN locale TEXT");
+  // Moneda en la que ve los precios (avisos incluidos).
+  if (!userCols.rows.some((r) => r.name === "currency")) await c.execute("ALTER TABLE users ADD COLUMN currency TEXT");
 }
 
 let client: Client | null = null;
@@ -96,6 +142,14 @@ export async function exec(sql: string, args: InValue[] = []): Promise<number> {
   await ready;
   const res = await c.execute({ sql, args });
   return res.rowsAffected;
+}
+
+/** Varias escrituras en una sola ida y vuelta a la base de datos (en bloques). */
+export async function execBatch(stmts: { sql: string; args: InValue[] }[], chunk = 200): Promise<void> {
+  if (!stmts.length) return;
+  const c = getClient();
+  await ready;
+  for (let i = 0; i < stmts.length; i += chunk) await c.batch(stmts.slice(i, i + chunk), "write");
 }
 
 export async function peekCache<T>(key: string): Promise<T | undefined> {

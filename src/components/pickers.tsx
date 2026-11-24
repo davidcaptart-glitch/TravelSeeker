@@ -2,6 +2,7 @@
 
 import { MapPin, Plus, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useFormat, useT } from "@/i18n/client";
 import type { Place } from "@/lib/types";
 
 type AirportHit = {
@@ -42,9 +43,9 @@ function useSearch<T>(url: (q: string) => string, q: string, minLength = 2) {
 function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
     <>
-      <Search className="pointer-events-none absolute top-3.5 left-3.5 h-4 w-4 text-muted" />
+      <Search className="pointer-events-none absolute top-3.5 start-3.5 h-4 w-4 text-muted" />
       <input
-        className="input scroll-mt-20 pl-10"
+        className="input scroll-mt-20 ps-10"
         type="search"
         autoComplete="off"
         // En el móvil, el teclado y la barra inferior tapan las sugerencias: sube el buscador arriba del todo.
@@ -61,22 +62,19 @@ function SearchInput({ value, onChange, placeholder }: { value: string; onChange
   );
 }
 
-function inhabitants(n: number) {
-  return n >= 1e6 ? `${(n / 1e6).toLocaleString("es-ES", { maximumFractionDigits: 1 })} M hab.` : `${Math.round(n / 1000)} mil hab.`;
-}
-
 const LIST ="absolute z-20 mt-1.5 max-h-72 w-full overflow-auto rounded-2xl border border-border bg-surface p-1 shadow-xl";
-const ITEM = "w-full rounded-xl px-3 py-2.5 text-left text-sm hover:bg-surface-2";
+const ITEM = "w-full rounded-xl px-3 py-2.5 text-start text-sm hover:bg-surface-2";
 
 export function AirportMultiPicker({
   value,
   onChange,
-  placeholder = "Ciudad o código (BCN, Madrid…)",
+  placeholder,
 }: {
   value: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
 }) {
+  const t = useT("alertForm");
   const [q, setQ] = useState("");
   const hits = useSearch<AirportHit>((s) => `/api/airports?q=${encodeURIComponent(s)}`, q, 2);
   return (
@@ -85,13 +83,13 @@ export function AirportMultiPicker({
         <div className="mb-3 flex flex-wrap gap-1.5">
           {value.map((code) => (
             <button key={code} type="button" className="chip chip-on" onClick={() => onChange(value.filter((v) => v !== code))}>
-              <span className="font-mono">{code}</span> <X className="h-3.5 w-3.5" aria-label="Quitar" />
+              <span className="font-mono">{code}</span> <X className="h-3.5 w-3.5" aria-label={t("remove")} />
             </button>
           ))}
         </div>
       )}
       <div className="relative">
-        <SearchInput value={q} onChange={setQ} placeholder={value.length ? "Añadir otro aeropuerto" : placeholder} />
+        <SearchInput value={q} onChange={setQ} placeholder={value.length ? t("pickerAddAirport") : (placeholder ?? t("pickerAirportPlaceholder"))} />
         {q.length >= 2 && hits.length > 0 && (
           <ul className={LIST}>
             {hits.map((a) => (
@@ -121,14 +119,15 @@ export function AirportMultiPicker({
 export function PlacePicker({
   value,
   onChange,
-  placeholder = "Ciudad, pueblo o dirección",
+  placeholder,
 }: {
   value: Place | undefined;
   onChange: (p: Place | undefined) => void;
   placeholder?: string;
 }) {
+  const t = useT("alertForm");
   const [q, setQ] = useState("");
-  const hits = useSearch<Place & { kind?: string; population?: number }>((s) => `/api/places?q=${encodeURIComponent(s)}`, q, 3);
+  const hits = useSearch<Place & { kind?: string; kindId?: string; population?: number; populationLabel?: string }>((s) => `/api/places?q=${encodeURIComponent(s)}`, q, 3);
   if (value) {
     return (
       <div className="flex min-h-11 items-center justify-between gap-2 rounded-2xl border border-accent bg-accent-soft px-3.5 py-2 text-sm">
@@ -137,19 +136,22 @@ export function PlacePicker({
           <span className="truncate font-medium">{value.label}</span>
         </span>
         <button type="button" className="shrink-0 font-medium text-accent" onClick={() => onChange(undefined)}>
-          Cambiar
+          {t("change")}
         </button>
       </div>
     );
   }
   return (
     <div className="relative">
-      <SearchInput value={q} onChange={setQ} placeholder={placeholder} />
+      <SearchInput value={q} onChange={setQ} placeholder={placeholder ?? t("pickerPlacePlaceholder")} />
       {q.length >= 3 && hits.length > 0 && (
         <ul className={LIST}>
           {hits
             .filter((p, i) => hits.findIndex((x) => x.label === p.label) === i)
-            .map((p, i) => (
+            .map((p, i) => {
+              // Ciudad grande: se resalta. kind llega ya traducido, así que no se compara con su texto.
+              const isCity = p.kindId ? p.kindId === "city" : (p.population ?? 0) >= 50000;
+              return (
               <li key={i}>
                 <button
                   type="button"
@@ -164,20 +166,21 @@ export function PlacePicker({
                     setQ("");
                   }}
                 >
-                  <MapPin className={`h-4 w-4 shrink-0 ${p.kind === "Ciudad" ? "text-accent" : "text-muted"}`} />
+                  <MapPin className={`h-4 w-4 shrink-0 ${isCity ? "text-accent" : "text-muted"}`} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{p.label.split(", ")[0]}</span>
                     <span className="hint block truncate">{p.label.split(", ").slice(1).reverse().join(" · ")}</span>
                   </span>
                   {p.kind && (
-                    <span className={`badge shrink-0 ${p.kind === "Ciudad" ? "bg-accent-soft text-accent" : "bg-surface-2 text-muted"}`}>
+                    <span className={`badge shrink-0 ${isCity ? "bg-accent-soft text-accent" : "bg-surface-2 text-muted"}`}>
                       {p.kind}
-                      {p.population && p.population >= 1000 ? ` · ${inhabitants(p.population)}` : ""}
+                      {p.populationLabel ? ` · ${p.populationLabel}` : ""}
                     </span>
                   )}
                 </button>
               </li>
-            ))}
+              );
+            })}
         </ul>
       )}
     </div>
@@ -195,6 +198,7 @@ export function NearbyAirports({
   value: string[];
   onChange: (v: string[]) => void;
 }) {
+  const t = useT("alertForm");
   const [list, setList] = useState<AirportHit[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -206,7 +210,7 @@ export function NearbyAirports({
       cancelled = true;
     };
   }, [place.lat, place.lon, radiusKm]);
-  if (!list.length) return <p className="hint">No hay aeropuertos en {radiusKm} km. Amplía la distancia o activa las rutas en tren o bus.</p>;
+  if (!list.length) return <p className="hint">{t("pickerNoAirports", { km: radiusKm })}</p>;
   return (
     <div className="flex flex-wrap gap-2">
       {list.map((a) => {
@@ -229,11 +233,13 @@ export function NearbyAirports({
 }
 
 export function DateList({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const t = useT("alertForm");
+  const f = useFormat();
   const [d, setD] = useState("");
   return (
     <div>
       <div className="flex gap-2">
-        <input type="date" className="input" value={d} onChange={(e) => setD(e.target.value)} aria-label="Fecha" />
+        <input type="date" className="input" value={d} onChange={(e) => setD(e.target.value)} aria-label={t("pickerDate")} />
         <button
           type="button"
           className="btn-ghost shrink-0"
@@ -243,20 +249,15 @@ export function DateList({ value, onChange }: { value: string[]; onChange: (v: s
             setD("");
           }}
         >
-          <Plus className="h-4 w-4" /> Añadir
+          <Plus className="h-4 w-4" /> {t("pickerAdd")}
         </button>
       </div>
       {value.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {value.map((x) => (
             <button key={x} type="button" className="chip chip-on" onClick={() => onChange(value.filter((v) => v !== x))}>
-              {new Date(`${x}T00:00:00Z`).toLocaleDateString("es-ES", {
-                weekday: "short",
-                day: "numeric",
-                month: "short",
-                timeZone: "UTC",
-              })}
-              <X className="h-3.5 w-3.5" aria-label="Quitar" />
+              {f.date(x)}
+              <X className="h-3.5 w-3.5" aria-label={t("remove")} />
             </button>
           ))}
         </div>
