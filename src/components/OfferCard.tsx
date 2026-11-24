@@ -1,4 +1,4 @@
-import { Bed, ChevronRight, PartyPopper, Plane, TrendingDown } from "lucide-react";
+import { Bed, BusFront, ChevronRight, PartyPopper, Plane, TrainFront, TrendingDown } from "lucide-react";
 import Link from "next/link";
 import { getFormat, getT } from "@/i18n/server";
 import type { MatchWithAlert } from "@/lib/repo";
@@ -7,7 +7,10 @@ import { MatchActions } from "./MatchActions";
 /** Tarjeta compacta de una oferta para las listas (Ofertas y Guardados): lo justo para decidir de un vistazo. */
 export async function OfferCard({ m, index = 0 }: { m: MatchWithAlert; index?: number }) {
   const [t, f] = await Promise.all([getT("offers"), getFormat()]);
-  const { flight, hotel, window } = m.data;
+  const { flight, hotel, window, ground } = m.data;
+  const kindLabel = ground ? t(`ground_${ground.mode}`) : !flight ? t("hotelOnly") : hotel ? t("flightHotel") : t("flightReturn");
+  const GroundIcon = ground?.mode === "bus" ? BusFront : TrainFront;
+  const bookLink = flight ? (flight.legs ? undefined : flight.link) : ground ? (ground.out.legs.find((l) => l.ticketUrl)?.ticketUrl ?? ground.out.bookingLinks?.[0]?.url) : (hotel?.bookingLinks?.[0]?.url ?? hotel?.link);
   const dest = m.data.destinationLabel.split(",")[0];
   const cheaper = m.updatedAt !== m.createdAt && !m.seen;
   const booked = m.status === "booked";
@@ -44,17 +47,27 @@ export async function OfferCard({ m, index = 0 }: { m: MatchWithAlert; index?: n
           </div>
           <div className="shrink-0 text-end">
             <p className="text-gradient text-2xl font-extrabold tabular-nums">{f.eur(m.totalPrice)}</p>
-            <p className="hint">{hotel ? t("flightHotel") : t("flightReturn")}</p>
+            <p className="hint">{kindLabel}</p>
           </div>
         </div>
         <div className="mt-3 flex min-w-0 items-center gap-2 text-xs text-muted">
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 font-mono font-semibold text-foreground">
-            <Plane className="h-3 w-3" /> {flight.origin}→{flight.via?.length ? `${flight.via.join("/")}→` : ""}{flight.destination}
-          </span>
-          {flight.via?.length ? (
-            <span className="badge shrink-0 bg-accent-soft text-cyan">{t("combined")}</span>
-          ) : null}
-          <span className={flight.via?.length ? "hidden" : "shrink-0"}>{t("stops", { n: flight.stops })}</span>
+          {flight && (
+            <>
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 font-mono font-semibold text-foreground">
+                <Plane className="h-3 w-3" /> {flight.origin}→{flight.via?.length ? `${flight.via.join("/")}→` : ""}{flight.destination}
+              </span>
+              {flight.via?.length ? <span className="badge shrink-0 bg-accent-soft text-cyan">{t("combined")}</span> : null}
+              <span className={flight.via?.length ? "hidden" : "shrink-0"}>{t("stops", { n: flight.stops })}</span>
+            </>
+          )}
+          {ground && (
+            <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 font-semibold text-foreground">
+              <GroundIcon className="h-3 w-3 shrink-0" />
+              <span className="truncate">
+                {ground.out.legs.filter((l) => l.mode !== "WALK").map((l) => l.line ?? l.agency ?? l.mode).slice(0, 2).join(" › ")}
+              </span>
+            </span>
+          )}
           {hotel && (
             <span className="inline-flex min-w-0 items-center gap-1">
               <Bed className="h-3 w-3 shrink-0" /> <span className="truncate">{hotel.name}</span>
@@ -65,7 +78,7 @@ export async function OfferCard({ m, index = 0 }: { m: MatchWithAlert; index?: n
           </span>
         </div>
       </Link>
-      <MatchActions id={m.id} status={m.status} link={flight.legs ? undefined : flight.link} />
+      <MatchActions id={m.id} status={m.status} link={bookLink} />
       <p className="hint -mt-2 text-end">{t("priceChecked", { ago: f.ago(m.updatedAt) })}</p>
     </article>
   );

@@ -301,6 +301,7 @@ export function GroundOptions({
   to,
   country,
   pax = 1,
+  plain = false,
   t,
   f,
 }: {
@@ -309,13 +310,17 @@ export function GroundOptions({
   to?: Pt;
   country?: string;
   pax?: number;
+  // Sin recomendación (una sola opción ya elegida, p. ej. la ida de un viaje en tren).
+  plain?: boolean;
 } & I18n) {
   if (!options.length) return <p className="hint">{t("noRoute")}</p>;
   const { cheapest, fastest } = pickGround(options);
-  const { best, reason } = recommend(options, pax, t, f);
+  const rec = recommend(options, pax, t, f);
+  const best = rec.best;
+  const reason = plain ? undefined : rec.reason;
   const rest = options.filter((o) => o !== best).sort((a, b) => perPerson(a, pax) - perPerson(b, pax));
   const tagsOf = (o: GroundOption) =>
-    [o === best && "tagRecommended", options.length > 1 && o === cheapest && "tagCheapest", options.length > 1 && o === fastest && "tagFastest"].filter(
+    [!plain && o === best && "tagRecommended", options.length > 1 && o === cheapest && "tagCheapest", options.length > 1 && o === fastest && "tagFastest"].filter(
       (tag): tag is Tag => Boolean(tag),
     );
   return (

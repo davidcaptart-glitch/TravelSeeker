@@ -104,7 +104,8 @@ export function legCost(mode: string, km: number, country: string | undefined, f
     return (country && URBAN_TICKET[country]) || 2;
   }
   if (m === "COACH") return Math.round(Math.max(5, km * 0.06));
-  if (m === "HIGHSPEED_RAIL") return Math.round(Math.max(15, km * 0.12));
+  // Alta velocidad con competencia de compañías baratas (Ouigo, Iryo, Avlo…): ~9 céntimos/km de media.
+  if (m === "HIGHSPEED_RAIL") return Math.round(Math.max(15, km * 0.09));
   if (m === "LONG_DISTANCE" || m === "NIGHT_RAIL") return Math.round(Math.max(10, km * 0.1));
   if (m === "REGIONAL_RAIL" || m === "REGIONAL_FAST_RAIL" || m === "RAIL" || m === "SUBURBAN") {
     return Math.round(Math.max(2, km * 0.1) * 100) / 100;

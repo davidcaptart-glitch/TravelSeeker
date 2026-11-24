@@ -2,7 +2,7 @@ import { isCurrency } from "./currency";
 import { isLocale, type Locale } from "@/i18n/config";
 import { randomUUID } from "node:crypto";
 import { exec, query } from "./db";
-import type { Alert, AlertConfig, Match, MatchData, MatchStatus, PricePoint, RunSummary } from "./types";
+import type { Alert, AlertConfig, Match, MatchData, MatchKind, MatchStatus, PricePoint, RunSummary } from "./types";
 
 type AlertRow = {
   id: string;
@@ -138,7 +138,7 @@ export async function dueAlerts(): Promise<Alert[]> {
 type MatchRow = {
   id: string;
   alert_id: string;
-  kind: "flight" | "full";
+  kind: MatchKind;
   total_price: number;
   data: string;
   seen: number;
@@ -167,7 +167,7 @@ function toMatch(r: MatchRow): Match {
  */
 export async function upsertMatch(
   alertId: string,
-  kind: "flight" | "full",
+  kind: MatchKind,
   dedupeKey: string,
   totalPrice: number,
   data: MatchData,

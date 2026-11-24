@@ -3,6 +3,10 @@ import { defineMessages } from "../core";
 // Tarjetas de oferta y decisiones (OfferCard, MatchActions).
 export default defineMessages({
   es: {
+    hotelOnly: "solo alojamiento",
+    ground_train: "tren i/v",
+    ground_bus: "autobús i/v",
+    ground_mixed: "tren + bus i/v",
     booked: "Reservado",
     priceDropped: "Ha bajado",
     new: "Nuevo",
@@ -26,6 +30,10 @@ export default defineMessages({
     alreadyBooked: "Ya lo he reservado: dejar de buscar",
   },
   en: {
+    hotelOnly: "accommodation only",
+    ground_train: "train, return",
+    ground_bus: "bus, return",
+    ground_mixed: "train + bus, return",
     booked: "Booked",
     priceDropped: "Price drop",
     new: "New",
@@ -49,6 +57,10 @@ export default defineMessages({
     alreadyBooked: "Already booked: stop searching",
   },
   pt: {
+    hotelOnly: "só hospedagem",
+    ground_train: "trem i/v",
+    ground_bus: "ônibus i/v",
+    ground_mixed: "trem + ônibus i/v",
     booked: "Reservado",
     priceDropped: "Baixou",
     new: "Novo",
@@ -72,6 +84,10 @@ export default defineMessages({
     alreadyBooked: "Já reservei: parar de buscar",
   },
   fr: {
+    hotelOnly: "hébergement seul",
+    ground_train: "train A/R",
+    ground_bus: "bus A/R",
+    ground_mixed: "train + bus A/R",
     booked: "Réservé",
     priceDropped: "En baisse",
     new: "Nouveau",
@@ -95,6 +111,10 @@ export default defineMessages({
     alreadyBooked: "Déjà réservé : arrêter de chercher",
   },
   it: {
+    hotelOnly: "solo alloggio",
+    ground_train: "treno A/R",
+    ground_bus: "autobus A/R",
+    ground_mixed: "treno + bus A/R",
     booked: "Prenotato",
     priceDropped: "È sceso",
     new: "Nuovo",
@@ -118,6 +138,10 @@ export default defineMessages({
     alreadyBooked: "Già prenotato: smetti di cercare",
   },
   de: {
+    hotelOnly: "nur Unterkunft",
+    ground_train: "Zug hin/zurück",
+    ground_bus: "Bus hin/zurück",
+    ground_mixed: "Zug + Bus hin/zurück",
     booked: "Gebucht",
     priceDropped: "Günstiger",
     new: "Neu",
@@ -141,6 +165,10 @@ export default defineMessages({
     alreadyBooked: "Schon gebucht: Suche beenden",
   },
   zh: {
+    hotelOnly: "仅住宿",
+    ground_train: "火车往返",
+    ground_bus: "巴士往返",
+    ground_mixed: "火车 + 巴士往返",
     booked: "已预订",
     priceDropped: "已降价",
     new: "新",
@@ -164,6 +192,10 @@ export default defineMessages({
     alreadyBooked: "已预订：停止搜索",
   },
   ja: {
+    hotelOnly: "宿泊のみ",
+    ground_train: "列車・往復",
+    ground_bus: "バス・往復",
+    ground_mixed: "列車 + バス・往復",
     booked: "予約済み",
     priceDropped: "値下がり",
     new: "新着",
@@ -187,6 +219,10 @@ export default defineMessages({
     alreadyBooked: "予約済み：検索を停止",
   },
   ko: {
+    hotelOnly: "숙소만",
+    ground_train: "기차 왕복",
+    ground_bus: "버스 왕복",
+    ground_mixed: "기차 + 버스 왕복",
     booked: "예약함",
     priceDropped: "가격 인하",
     new: "새 항목",
@@ -210,6 +246,10 @@ export default defineMessages({
     alreadyBooked: "이미 예약함: 검색 중지",
   },
   ar: {
+    hotelOnly: "إقامة فقط",
+    ground_train: "قطار ذهاب وعودة",
+    ground_bus: "حافلة ذهاب وعودة",
+    ground_mixed: "قطار + حافلة ذهاب وعودة",
     booked: "محجوز",
     priceDropped: "انخفض السعر",
     new: "جديد",
@@ -234,6 +274,10 @@ export default defineMessages({
     alreadyBooked: "حجزته بالفعل: أوقف البحث",
   },
   ru: {
+    hotelOnly: "только жильё",
+    ground_train: "поезд туда-обратно",
+    ground_bus: "автобус туда-обратно",
+    ground_mixed: "поезд + автобус туда-обратно",
     booked: "Забронировано",
     priceDropped: "Подешевело",
     new: "Новое",
@@ -257,6 +301,10 @@ export default defineMessages({
     alreadyBooked: "Уже забронировал: остановить поиск",
   },
   hi: {
+    hotelOnly: "सिर्फ़ ठहरना",
+    ground_train: "ट्रेन, आने-जाने",
+    ground_bus: "बस, आने-जाने",
+    ground_mixed: "ट्रेन + बस, आने-जाने",
     booked: "बुक किया",
     priceDropped: "क़ीमत घटी",
     new: "नया",
@@ -280,6 +328,10 @@ export default defineMessages({
     alreadyBooked: "बुक कर लिया: खोज रोकें",
   },
   id: {
+    hotelOnly: "hanya penginapan",
+    ground_train: "kereta PP",
+    ground_bus: "bus PP",
+    ground_mixed: "kereta + bus PP",
     booked: "Dipesan",
     priceDropped: "Turun harga",
     new: "Baru",

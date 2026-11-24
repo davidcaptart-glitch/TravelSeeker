@@ -57,9 +57,9 @@ function flightEvent(id: string, leg: { from: string; to: string; airline?: stri
 }
 
 export function tripEvents(m: Match, t: T, f: Format): CalEvent[] {
-  const { flight, hotel, window } = m.data;
+  const { flight, hotel, window, ground } = m.data;
   const events: CalEvent[] = [];
-  const legs: FlightLeg[] | undefined = flight.legs;
+  const legs: FlightLeg[] | undefined = flight?.legs;
   if (legs?.length) {
     legs.forEach((l, i) =>
       events.push(
@@ -68,7 +68,32 @@ export function tripEvents(m: Match, t: T, f: Format): CalEvent[] {
         ]),
       ),
     );
-  } else {
+  } else if (ground) {
+    // Tren o autobús: un evento para la ida y otro para la vuelta, de la primera salida a la última llegada.
+    const parts = [
+      { id: "out", date: window.depart, opt: ground.out },
+      ...(ground.back ? [{ id: "back", date: window.ret, opt: ground.back }] : []),
+    ];
+    for (const p of parts) {
+      const rides = p.opt.legs.filter((l) => l.mode !== "WALK");
+      const start = rides.find((l) => l.departTime)?.departTime;
+      if (!start) continue;
+      const endTime = [...rides].reverse().find((l) => l.arriveTime)?.arriveTime;
+      const first = rides[0];
+      const last = rides[rides.length - 1];
+      const link = p.opt.legs.find((l) => l.ticketUrl)?.ticketUrl ?? p.opt.bookingLinks?.[0]?.url;
+      events.push({
+        uid: `${m.id}-${p.id}@travelseeker`,
+        title: t("eventGround", { from: first.from, to: last.to }),
+        start: `${p.date}T${start}`,
+        end: endTime ? `${endTime < start ? addDays(p.date, 1) : p.date}T${endTime}` : addMinutes(p.date, start, p.opt.minutes),
+        location: first.from,
+        description: [rides.map((l) => [l.line, l.agency].filter(Boolean).join(" · ")).filter(Boolean).join(" → "), t("descPrice", { price: f.eur(p.opt.cost) }), link ? t("descLink", { url: link }) : ""]
+          .filter(Boolean)
+          .join("\n"),
+      });
+    }
+  } else if (flight) {
     const price = [t("descPriceTrip", { price: f.eur(flight.price) })];
     if (flight.departTime) {
       events.push(

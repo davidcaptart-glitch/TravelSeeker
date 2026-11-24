@@ -10,7 +10,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const m = await getMatch(id, await currentUserId());
   if (!m) return new Response(tFor(locale, "actions")("notFound"), { status: 404 });
   const ics = toIcs(tripEvents(m, tFor(locale, "calendar"), formatFor(locale, await getMoney())));
-  const name = `travelseeker-${m.data.flight.destination}-${m.data.flight.depart}.ics`;
+  const name = `travelseeker-${m.data.flight?.destination ?? "trip"}-${m.data.window.depart}.ics`;
   return new Response(ics, {
     headers: {
       "Content-Type": "text/calendar; charset=utf-8",

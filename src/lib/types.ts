@@ -18,11 +18,20 @@ export const HOTEL_TYPES = ["hotel", "apartment", "hostel"] as const;
 export const REGIONS = ["europe", "northamerica", "latam", "africa", "asia", "oceania"] as const;
 export type Region = (typeof REGIONS)[number] | "antarctica" | "other";
 
+// Qué busca la alerta: vuelo (con alojamiento opcional), solo alojamiento (ya tienes el viaje) o
+// comparar avión, tren y autobús entre dos ciudades.
+export const ALERT_MODES = ["flight", "hotel", "compare"] as const;
+export type AlertMode = (typeof ALERT_MODES)[number];
+
 export const alertConfigSchema = z.object({
   name: z.string().min(1).max(80),
+  mode: z.enum(ALERT_MODES).optional(), // sin valor = vuelo (alertas de antes)
+  // Comparar: ciudad o sitio desde el que sales (los aeropuertos se eligen cerca de aquí).
+  originPlace: placeSchema.optional(),
   // flight: avisa en cuanto el vuelo cumple. flight_hotel: solo cuando cumplen vuelo y alojamiento.
   notifyMode: z.enum(["flight", "flight_hotel"]),
-  origins: z.array(iata).min(1),
+  // Aeropuertos de salida (vacío en «solo alojamiento»; en «comparar» se buscan solos si no hay).
+  origins: z.array(iata).default([]),
   destination: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("place"), place: placeSchema }),
     z.object({
@@ -222,9 +231,19 @@ export type LastMile = {
   options: GroundOption[];
 };
 
+export type MatchKind = "flight" | "full" | "hotel" | "ground";
+
+/** Viaje en tren o autobús (ida y vuelta) en una alerta de comparar. Precio por persona. */
+export type GroundTrip = { mode: "train" | "bus" | "mixed"; out: GroundOption; back?: GroundOption; price: number };
+
+/** Lo más barato de cada forma de viajar en una alerta de comparar (por persona, ida y vuelta). */
+export type CompareRow = { mode: "flight" | "train" | "bus"; price: number; minutes?: number; depart: string; ret: string; estimated?: boolean; matchId?: string };
+
 export type MatchData = {
   window: TripWindow;
-  flight: FlightOffer;
+  // Sin vuelo en «solo alojamiento» y en los viajes en tren o autobús.
+  flight?: FlightOffer;
+  ground?: GroundTrip;
   hotel?: HotelOffer;
   lastMile?: LastMile;
   destinationLabel: string;
@@ -236,7 +255,8 @@ export type MatchStatus = (typeof MATCH_STATUSES)[number];
 export type Match = {
   id: string;
   alertId: string;
-  kind: "flight" | "full";
+  // flight: vuelo · full: vuelo + alojamiento · hotel: solo alojamiento · ground: tren o autobús.
+  kind: MatchKind;
   totalPrice: number;
   data: MatchData;
   seen: boolean;
@@ -259,6 +279,8 @@ export type RunSummary = {
   groundOnly?: GroundOption;
   // Todas las alternativas por tierra (la más rápida es groundOnly).
   groundOnlyOptions?: GroundOption[];
+  // Comparar avión, tren y bus: lo más barato de cada uno en tus fechas.
+  compare?: CompareRow[];
   // Vuelo ida y vuelta más barato por persona visto en tus fechas, cumpla o no tu precio.
   cheapestForDates?: number;
   // Lo mismo en fechas parecidas: mismos meses y noches, cualquier día de la semana.

@@ -14,7 +14,7 @@ import { groundOptions, lastMile } from "./providers/ground";
 import { searchHotels } from "./providers/hotels";
 import { ALLOW_MOCK } from "./providers/mock";
 import { addPricePoint, decidedTrips, deleteSimulatedMatches, dueAlerts, ensureUser, pruneMatches, saveRun, upsertMatch } from "./repo";
-import type { Alert, AlertConfig, FlightOffer, MatchData, Place, RunSummary, TripWindow } from "./types";
+import type { Alert, AlertConfig, CompareRow, FlightOffer, GroundOption, GroundTrip, MatchData, Place, RunSummary, TripWindow } from "./types";
 
 // Búsquedas de pago (SerpApi) por ejecución; las de Ryanair no cuentan.
 const CONFIRM_PER_RUN = Number(process.env.CONFIRM_PER_RUN ?? 4);
@@ -154,6 +154,20 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
   const windowByKey = new Map(windows.map((w) => [`${w.depart}_${w.ret}`, w]));
   if (!ALLOW_MOCK) await deleteSimulatedMatches(alert.id);
 
+  // Solo alojamiento: ya tienes el viaje, se buscan solo sitios donde dormir.
+  const mode = c.mode ?? "flight";
+  if (mode === "hotel") return runHotelOnly(alert, { summary, windows, t, f });
+  // Comparar: los aeropuertos de salida, los de cerca del sitio desde el que sales (si no se eligieron).
+  const origins = c.origins.length
+    ? c.origins
+    : c.originPlace
+      ? nearbyAirports(c.originPlace.lat, c.originPlace.lon, 120, 8)
+          .sort((a, b) => Number(b.large) - Number(a.large) || a.km - b.km)
+          .slice(0, 3)
+          .map((a) => a.iata)
+      : [];
+  if (!origins.length && mode !== "compare") notes.push(t("noOrigins"));
+
   // 1) Cribado barato con precios en caché.
   const dests = destinationAirports(alert);
   const anyCodes = anywhereSet(alert);
@@ -162,7 +176,7 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
   const raw: FlightOffer[] = [];
   const targetPlace = c.destination.kind === "place" ? c.destination.place : null;
   const uncovered: string[] = [];
-  for (const origin of c.origins) {
+  for (const origin of origins) {
     for (const dest of dests ?? [null]) {
       if (dest === origin) continue;
       // Los aeropuertos elegidos a mano se respetan siempre; los automáticos se filtran.
@@ -218,7 +232,7 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
   if (c.flight.selfTransfer !== false && dests?.length && !dayTrip) {
     try {
       const combos = await findCombos({
-        origins: c.origins,
+        origins,
         destinations: dests,
         windows,
         adults: c.flight.passengers,
@@ -342,17 +356,45 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
     }
   }
 
-  // Un aviso por búsqueda: con detalle si es una sola opción; agrupado si hay varias (sin llenarte el móvil).
-  if (fresh.length) {
-    const cheapest = Math.round(Math.min(...fresh.map((x) => x.total)));
-    const one = fresh.length === 1 ? fresh[0] : null;
-    const title = one
-      ? t(one.change === "cheaper" ? "titleCheaper" : "titleMatch", { name: c.name })
-      : t("titleMany", { n: fresh.length, name: c.name });
-    const body = one ? t("bodyOne", { text: one.text }) : t("bodyMany", { price: f.eur(cheapest) });
-    const sent = await notifyUser(alert.userId, { title, body, path: one ? `/alerts/${alert.id}#m-${one.id}` : "/", matchId: one?.id });
-    if (sent > 0) summary.notified = fresh.length;
+  // Comparar avión, tren y autobús: lo más barato de cada uno en tus fechas.
+  if (mode === "compare") {
+    const rows: CompareRow[] = [];
+    const cheapestFlight = confirmed.find((o) => !o.legs) ?? confirmed[0];
+    if (cheapestFlight) {
+      rows.push({ mode: "flight", price: cheapestFlight.price, minutes: cheapestFlight.durationMinutes, depart: cheapestFlight.depart, ret: cheapestFlight.ret, estimated: cheapestFlight.cached });
+    }
+    if (c.originPlace && targetPlace) {
+      const ground = await compareGround(alert, windows, confirmed, c.originPlace, targetPlace).catch((err) => {
+        notes.push(t("compareError", { error: (err as Error).message }));
+        return [];
+      });
+      const decided = await decidedTrips(alert.id);
+      for (const g of ground) {
+        rows.push({ mode: g.trip.mode === "bus" ? "bus" : "train", price: g.trip.price, minutes: g.trip.out.minutes, depart: g.window.depart, ret: g.window.ret, estimated: g.trip.out.estimated });
+        const k = `ground|${g.trip.mode}|${g.window.depart}|${g.window.ret}`;
+        if (g.trip.price > c.flight.maxPrice || decided.has(k)) continue;
+        const total = g.trip.price * c.flight.passengers;
+        const data: MatchData = { window: g.window, ground: g.trip, destinationLabel: targetPlace.label };
+        const { id: matchId, change } = await upsertMatch(alert.id, "ground", `${alert.id}|${k}`, total, data);
+        rows[rows.length - 1].matchId = matchId;
+        bestTotal = Math.min(bestTotal, total);
+        summary.flightMatches++;
+        if (change) {
+          const when = g.window.nights === 0 ? f.date(g.window.depart) : `${f.date(g.window.depart)} – ${f.date(g.window.ret)}`;
+          const text = t("groundOfferText", { mode: t(`mode_${g.trip.mode}`), route: `${c.originPlace.label.split(",")[0]} → ${targetPlace.label.split(",")[0]}`, when, price: f.eur(g.trip.price) });
+          fresh.push({ id: matchId, change, total, text });
+        }
+      }
+    } else {
+      notes.push(t("noCompareFrom"));
+    }
+    // Una fila por forma de viajar: la más barata.
+    const best = new Map<string, CompareRow>();
+    for (const r of rows) if (!best.has(r.mode) || r.price < best.get(r.mode)!.price) best.set(r.mode, r);
+    summary.compare = [...best.values()].sort((a, b) => a.price - b.price);
   }
+
+  await notifyFresh(alert, fresh, t, f, summary);
 
   // Alternativa solo por tierra (tren/bus) desde el punto de salida indicado.
   if (c.allowGround && c.groundFrom && c.destination.kind === "place") {
@@ -368,7 +410,7 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
 
   // Histórico guardado de esta ruta: lo visto en viajes parecidos (mismos meses y noches) en el último año.
   if (dests?.length) {
-    const stats = await routeStats(c.origins, dests, {
+    const stats = await routeStats(origins, dests, {
       months: c.dates.months,
       minNights: dayTrip ? 0 : c.dates.minNights,
       maxNights: dayTrip ? 0 : c.dates.maxNights,
@@ -376,20 +418,20 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
     }).catch(() => null);
     if (stats) {
       const best = summary.cheapestForDates ?? summary.cheapestSimilar;
-      const share = best !== undefined ? await cheaperThanShare(stats, best, c.origins, dests, c.dates.months) : null;
+      const share = best !== undefined ? await cheaperThanShare(stats, best, origins, dests, c.dates.months) : null;
       summary.routeHistory = { ...stats, ...(share !== null && best !== undefined ? { bestShare: share, best } : {}) };
     }
   }
 
   // Tendencia del mercado (próximos 12 meses) para decir si tu precio es realista.
   if (dests?.length) {
-    const pairs = c.origins.flatMap((o) => dests.filter((d) => d !== o).map((d) => [o, d] as const)).slice(0, 4);
+    const pairs = origins.flatMap((o) => dests.filter((d) => d !== o).map((d) => [o, d] as const)).slice(0, 4);
     const trends = await Promise.all(pairs.map(([o, d]) => monthlyTrend(o, d).catch(() => ({}) as Record<string, number>)));
     const months: Record<string, number> = {};
     for (const tr of trends) for (const [m, p] of Object.entries(tr)) months[m] = Math.min(months[m] ?? Infinity, p);
     if (Object.keys(months).length) {
       summary.market = {
-        route: `${c.origins.join("/")} → ${pairs.map(([, d]) => d).filter((d, i, a) => a.indexOf(d) === i).join("/")}`,
+        route: `${origins.join("/")} → ${pairs.map(([, d]) => d).filter((d, i, a) => a.indexOf(d) === i).join("/")}`,
         months: Object.entries(months)
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([month, price]) => ({ month, price })),
@@ -408,6 +450,130 @@ export async function runAlert(alert: Alert): Promise<RunSummary> {
     total: Number.isFinite(bestTotal) ? bestTotal : null,
   });
   return summary;
+}
+
+type EngineT = ReturnType<typeof makeT<(typeof MESSAGES.engine)["es"]>>;
+type EngineF = ReturnType<typeof makeFormat>;
+type Fresh = { id: string; change: "new" | "cheaper"; total: number; text: string };
+
+/** Un aviso por búsqueda: con detalle si es una sola opción; agrupado si hay varias (sin llenarte el móvil). */
+async function notifyFresh(alert: Alert, fresh: Fresh[], t: EngineT, f: EngineF, summary: RunSummary) {
+  if (!fresh.length) return;
+  const c = alert.config;
+  const cheapest = Math.round(Math.min(...fresh.map((x) => x.total)));
+  const one = fresh.length === 1 ? fresh[0] : null;
+  const title = one ? t(one.change === "cheaper" ? "titleCheaper" : "titleMatch", { name: c.name }) : t("titleMany", { n: fresh.length, name: c.name });
+  const body = one ? t("bodyOne", { text: one.text }) : t("bodyMany", { price: f.eur(cheapest) });
+  const sent = await notifyUser(alert.userId, { title, body, path: one ? `/alerts/${alert.id}#m-${one.id}` : "/", matchId: one?.id });
+  if (sent > 0) summary.notified = fresh.length;
+}
+
+/** Unas pocas fechas repartidas (para no gastar demasiadas búsquedas). */
+function spread<T>(list: T[], n: number): T[] {
+  if (list.length <= n) return list;
+  return Array.from({ length: n }, (_, i) => list[Math.round((i * (list.length - 1)) / (n - 1))]);
+}
+
+/**
+ * Solo alojamiento: para cada una de unas cuantas fechas, el mejor alojamiento que cumple.
+ * Se avisa como con los vuelos (una oferta por fechas, para guardar, descartar o reservar).
+ */
+async function runHotelOnly(alert: Alert, ctx: { summary: RunSummary; windows: TripWindow[]; t: EngineT; f: EngineF }): Promise<RunSummary> {
+  const { summary, windows, t, f } = ctx;
+  const c = alert.config;
+  const notes = summary.notes;
+  if (c.destination.kind !== "place" || !c.hotel) {
+    notes.push(t("hotelNeedsPlace"));
+    await saveRun(alert.id, summary);
+    return summary;
+  }
+  const place = c.destination.place;
+  const decided = await decidedTrips(alert.id);
+  const found: { w: TripWindow; data: MatchData; total: number; key: string }[] = [];
+  for (const w of spread(windows.filter((x) => x.nights > 0), 8)) {
+    try {
+      const h = await searchHotels(place, w.depart, w.ret, w.nights, c.flight.passengers, c.hotel);
+      if (h.quotaExhausted && !notes.includes(t("hotelQuota"))) notes.push(t("hotelQuota"));
+      const cityNote = t("cityNotFound", { place: place.label });
+      if (h.cityNotFound && !notes.includes(cityNote)) notes.push(cityNote);
+      summary.screened += h.offers.length;
+      const best = h.offers[0];
+      if (!best) continue;
+      const key = `hotel|${w.depart}|${w.ret}|${best.name}`;
+      if (decided.has(key)) continue;
+      found.push({ w, total: best.total, key, data: { window: w, hotel: best, destinationLabel: place.label } });
+    } catch (err) {
+      notes.push(t("hotelError", { error: (err as Error).message }));
+    }
+  }
+  summary.candidates = found.length;
+  const fresh: Fresh[] = [];
+  let bestTotal = Infinity;
+  for (const x of found.sort((a, b) => a.total - b.total).slice(0, MAX_MATCHES_PER_RUN)) {
+    const { id, change } = await upsertMatch(alert.id, "hotel", `${alert.id}|${x.key}`, x.total, x.data);
+    summary.fullMatches++;
+    summary.flightMatches++;
+    bestTotal = Math.min(bestTotal, x.total);
+    if (change) {
+      const when = `${f.date(x.w.depart)} – ${f.date(x.w.ret)}`;
+      fresh.push({ id, change, total: x.total, text: t("hotelOfferText", { name: x.data.hotel!.name, when, nights: f.nights(x.w.nights), total: f.eur(Math.round(x.total)) }) });
+    }
+  }
+  await notifyFresh(alert, fresh, t, f, summary);
+  await pruneMatches(alert.id, Math.max(24, c.checkEveryHours * 4));
+  await saveRun(alert.id, summary);
+  await addPricePoint(alert.id, { at: summary.at, flight: null, total: Number.isFinite(bestTotal) ? bestTotal : null });
+  return summary;
+}
+
+const RAIL_MODES = ["RAIL", "SUBURBAN", "REGIONAL_RAIL", "REGIONAL_FAST_RAIL", "LONG_DISTANCE", "HIGHSPEED_RAIL", "NIGHT_RAIL"];
+const LOCAL_MODES = ["WALK", "TAXI", "SUBWAY", "METRO", "TRAM", "FUNICULAR", "CABLE_CAR"];
+
+/** Tren, autobús o los dos (se ignoran los trayectos a pie, en metro o en taxi hasta la estación). */
+function groundModeOf(o: GroundOption): GroundTrip["mode"] | null {
+  const main = o.legs.filter((l) => !LOCAL_MODES.includes(l.mode));
+  if (!main.length) return null;
+  const rail = main.filter((l) => RAIL_MODES.includes(l.mode)).length;
+  if (rail === main.length) return "train";
+  if (!rail) return "bus";
+  return "mixed";
+}
+
+/**
+ * Tren y autobús de ida y vuelta para unas cuantas fechas (las de los vuelos más baratos y las primeras):
+ * lo más barato de cada forma en cada fecha. Autobuses de FlixBus con precio real; trenes, aproximado.
+ */
+async function compareGround(alert: Alert, windows: TripWindow[], flights: FlightOffer[], from: Place, to: Place) {
+  const c = alert.config;
+  const keys = new Set<string>();
+  const picked: TripWindow[] = [];
+  const add = (w?: TripWindow) => {
+    if (!w || keys.has(`${w.depart}_${w.ret}`) || picked.length >= 4) return;
+    keys.add(`${w.depart}_${w.ret}`);
+    picked.push(w);
+  };
+  const byKey = new Map(windows.map((w) => [`${w.depart}_${w.ret}`, w]));
+  for (const fl of flights.slice(0, 2)) add(byKey.get(`${fl.depart}_${fl.ret}`));
+  for (const w of spread(windows, 4)) add(w);
+
+  const out: { window: TripWindow; trip: GroundTrip }[] = [];
+  for (const w of picked) {
+    const [go, back] = await Promise.all([
+      groundOptions(from, to, { date: w.depart, hourUtc: 7, country: to.country, includeTaxi: false, alsoBus: true }).catch(() => [] as GroundOption[]),
+      groundOptions(to, from, { date: w.ret, hourUtc: 14, country: from.country, includeTaxi: false, alsoBus: true }).catch(() => [] as GroundOption[]),
+    ]);
+    for (const m of ["train", "bus", "mixed"] as const) {
+      const cheapest = (opts: GroundOption[]) => opts.filter((o) => groundModeOf(o) === m).sort((a, b) => a.cost - b.cost)[0];
+      const g = cheapest(go);
+      if (!g) continue;
+      const b = cheapest(back);
+      // Sin vuelta encontrada ese día: se estima igual que la ida.
+      const price = Math.round((g.cost + (b?.cost ?? g.cost)) * 100) / 100;
+      out.push({ window: w, trip: { mode: m, out: g, back: b, price } });
+    }
+  }
+  void c;
+  return out;
 }
 
 /**

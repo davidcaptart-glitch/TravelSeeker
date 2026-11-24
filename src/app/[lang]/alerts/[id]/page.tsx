@@ -1,5 +1,5 @@
 import { CalendarLinks } from "@/components/CalendarLinks";
-import { AlertTriangle, ArrowLeft, Bed, ChevronDown, ExternalLink, MapPin, PartyPopper, Plane, Radar, Star, TrainFront } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bed, BusFront, ChevronDown, ExternalLink, MapPin, PartyPopper, Plane, Radar, Scale, Star, TrainFront } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -17,7 +17,7 @@ import { getFormat, getT } from "@/i18n/server";
 import { getAirport } from "@/lib/geo";
 import { getAlert, listMatches, markMatchesSeen, priceHistory } from "@/lib/repo";
 import { currentUserId } from "@/lib/session";
-import type { HotelOffer, Match } from "@/lib/types";
+import type { CompareRow, GroundTrip, HotelOffer, Match } from "@/lib/types";
 
 type I18n = { t: Translator<NsMessages<"alertDetail">>; tt: Translator<NsMessages<"transport">>; f: Format };
 
@@ -78,12 +78,92 @@ function HotelBooking({ hotel, t, f }: { hotel: HotelOffer } & Pick<I18n, "t" | 
   );
 }
 
+const COMPARE_ICON = { flight: Plane, train: TrainFront, bus: BusFront };
+
+/** Comparar avión, tren y autobús: lo más barato de cada uno en tus fechas (por persona, ida y vuelta). */
+function CompareCard({ rows, t, f }: { rows: CompareRow[] } & Pick<I18n, "t" | "f">) {
+  return (
+    <section className="card space-y-3">
+      <div className="flex items-start gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-accent-soft text-accent">
+          <Scale className="h-5 w-5" />
+        </span>
+        <div>
+          <h2 className="font-semibold">{t("compareTitle")}</h2>
+          <p className="hint">{t("compareLead")}</p>
+        </div>
+      </div>
+      {rows.length ? (
+        <ul className="space-y-2">
+          {rows.map((r, i) => {
+            const Icon = COMPARE_ICON[r.mode];
+            const row = (
+              <>
+                <Icon className="h-5 w-5 shrink-0 text-muted" />
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
+                    {t(`compare_${r.mode}`)}
+                    {i === 0 && rows.length > 1 && <span className="badge bg-good-soft text-good">{t("compareCheapest")}</span>}
+                  </p>
+                  <p className="hint truncate">
+                    {r.depart === r.ret ? f.date(r.depart) : `${f.date(r.depart)} – ${f.date(r.ret)}`}
+                    {r.minutes ? ` · ${f.minutes(r.minutes)}` : ""}
+                  </p>
+                </div>
+                <p className="shrink-0 text-end font-bold tabular-nums">
+                  {r.estimated ? "~" : ""}
+                  {f.eur(r.price)}
+                </p>
+              </>
+            );
+            return (
+              <li key={r.mode}>
+                {r.matchId ? (
+                  <a href={`#m-${r.matchId}`} className="flex items-center gap-3 rounded-2xl bg-surface-2 p-3 transition hover:bg-surface-3">
+                    {row}
+                  </a>
+                ) : (
+                  <div className="flex items-center gap-3 rounded-2xl bg-surface-2 p-3">{row}</div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="rounded-2xl bg-surface-2 px-3 py-2.5 text-sm text-muted">{t("compareNone")}</p>
+      )}
+      <p className="hint">{t("compareNote")}</p>
+    </section>
+  );
+}
+
+/** Viaje en tren o autobús: la ida y la vuelta, con sus líneas, horarios y enlaces de compra. */
+function GroundTripSection({ g, t, tt, f }: { g: GroundTrip } & I18n) {
+  const parts = [
+    { label: t("outbound"), opt: g.out },
+    ...(g.back ? [{ label: t("inbound"), opt: g.back }] : []),
+  ];
+  return (
+    <section className="space-y-3 p-4 sm:px-5">
+      {parts.map((p) => (
+        <div key={p.label} className="space-y-2">
+          <p className="eyebrow">{p.label}</p>
+          <GroundOptions options={[p.opt]} pax={1} plain t={tt} f={f} />
+        </div>
+      ))}
+      {!g.back && <p className="hint">{t("noReturnFound")}</p>}
+    </section>
+  );
+}
+
 function MatchCard({ m, notifyMode, best, t, tt, f }: { m: Match; notifyMode: "flight" | "flight_hotel"; best: boolean } & I18n) {
-  const { flight, hotel, window, lastMile } = m.data;
+  const { flight, hotel, window, lastMile, ground } = m.data;
   const pendingHotel = notifyMode === "flight_hotel" && m.kind === "flight";
   const destLabel = lastMile?.to.label ?? m.data.destinationLabel;
   // Puerta a puerta: + ida y vuelta en el transporte más barato desde el aeropuerto (el taxi se paga por vehículo).
-  const pax = Math.max(1, Math.round((m.totalPrice - (hotel?.total ?? 0)) / flight.price));
+  const pax = flight ? Math.max(1, Math.round((m.totalPrice - (hotel?.total ?? 0)) / flight.price)) : 1;
+  const subtitle = ground ? t(`groundTrip_${ground.mode}`) : !flight ? t("hotelOnly") : hotel ? t("flightHotel") : t("flightOnly");
+  const bookLink = flight ? (flight.legs ? undefined : flight.link) : ground ? (ground.out.legs.find((l) => l.ticketUrl)?.ticketUrl ?? ground.out.bookingLinks?.[0]?.url) : hotel?.bookingLinks?.[0]?.url ?? hotel?.link;
   const { cheapest } = pickGround(lastMile?.options ?? []);
   const groundRoundTrip = cheapest ? cheapest.cost * 2 * (cheapest.kind === "taxi" ? 1 : pax) : 0;
   return (
@@ -110,7 +190,7 @@ function MatchCard({ m, notifyMode, best, t, tt, f }: { m: Match; notifyMode: "f
         </div>
         <div className="shrink-0 text-end">
           <p className="text-gradient text-2xl font-extrabold tabular-nums">{f.eur(m.totalPrice)}</p>
-          <p className="hint">{hotel ? t("flightHotel") : t("flightOnly")}</p>
+          <p className="hint">{subtitle}</p>
           {groundRoundTrip > 0 && (
             <p className="mt-1 text-sm font-medium tabular-nums">
               ~{f.eur(m.totalPrice + groundRoundTrip)}
@@ -130,7 +210,8 @@ function MatchCard({ m, notifyMode, best, t, tt, f }: { m: Match; notifyMode: "f
       )}
 
       <div className="divide-y divide-border border-t border-border">
-        {flight.legs ? (
+        {ground && <GroundTripSection g={ground} t={t} tt={tt} f={f} />}
+        {!flight ? null : flight.legs ? (
           <ComboLegs flight={flight} />
         ) : (
         <section className="flex items-start gap-3 p-4 sm:px-5">
@@ -162,6 +243,7 @@ function MatchCard({ m, notifyMode, best, t, tt, f }: { m: Match; notifyMode: "f
         </section>
         )}
 
+        {flight && (
         <section className="space-y-3 p-4 sm:px-5">
           <div className="flex items-start gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-surface-2 text-muted">
@@ -201,7 +283,9 @@ function MatchCard({ m, notifyMode, best, t, tt, f }: { m: Match; notifyMode: "f
             </p>
           )}
         </section>
+        )}
 
+        {(flight || hotel) && (
         <section className="flex items-start gap-3 p-4 sm:px-5">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-surface-2 text-muted">
             <Bed className="h-5 w-5" />
@@ -236,10 +320,11 @@ function MatchCard({ m, notifyMode, best, t, tt, f }: { m: Match; notifyMode: "f
             <p className="hint self-center">{t("noHotel")}</p>
           )}
         </section>
+        )}
       </div>
       <footer className="border-t border-border bg-surface-2/40 p-4 sm:px-5">
         {/* En un combinado se reserva tramo a tramo (arriba); aquí solo se marca. */}
-        <MatchActions id={m.id} status={m.status} link={flight.legs ? undefined : flight.link} />
+        <MatchActions id={m.id} status={m.status} link={bookLink} />
       </footer>
     </article>
   );
@@ -269,9 +354,16 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
   // Se marcan como vistos al abrir la alerta (se muestran resaltados solo esta vez).
   if (matches.some((m) => !m.seen)) await markMatchesSeen(id);
 
+  const mode = c.mode ?? "flight";
   const facts = [
-    [t("factNotify"), c.notifyMode === "flight" ? t("notifyFlight") : t("notifyFlightHotel")],
-    [t("factFlight"), `≤ ${f.eur(c.flight.maxPrice)} · ${f.stops(c.flight.maxStops)} · ${t("passengers", { n: c.flight.passengers })}`],
+    mode === "hotel"
+      ? [t("factMode"), t("hotelOnly")]
+      : mode === "compare"
+        ? [t("factMode"), t("compareTitle")]
+        : [t("factNotify"), c.notifyMode === "flight" ? t("notifyFlight") : t("notifyFlightHotel")],
+    mode === "hotel"
+      ? [t("factGuests"), t("passengers", { n: c.flight.passengers })]
+      : [t("factFlight"), `≤ ${f.eur(c.flight.maxPrice)} · ${f.stops(c.flight.maxStops)} · ${t("passengers", { n: c.flight.passengers })}`],
     [
       t("factDates"),
       [
@@ -310,7 +402,12 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
             </p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-balance">{c.name}</h1>
             <p className="mt-1 text-sm text-white/75">
-              <span className="font-mono">{c.origins.join(" · ")}</span> <span className="inline-block rtl:-scale-x-100">→</span>{" "}
+              {mode === "compare" && c.originPlace ? (
+                <span>{c.originPlace.label.split(",")[0]}</span>
+              ) : mode !== "hotel" ? (
+                <span className="font-mono">{c.origins.join(" · ")}</span>
+              ) : null}
+              {mode !== "hotel" && <> <span className="inline-block rtl:-scale-x-100">→</span>{" "}</>}
               {c.destination.kind === "place" ? c.destination.place.label.split(",").slice(0, 2).join(",") : t("anywhere")}
               {c.destinationAirports.length ? ` (${c.destinationAirports.join(", ")})` : ""}
             </p>
@@ -333,6 +430,7 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
       </section>
 
       <AlertActions id={id} active={alert.active} />
+      {c.mode === "compare" && <CompareCard rows={s?.compare ?? []} t={t} f={f} />}
 
       {booked.length > 0 ? (
         <section className="space-y-3">
@@ -391,7 +489,9 @@ async function AlertContent({ params }: { params: Promise<{ id: string }> }) {
         </div>
       )}
 
-      <PriceInsights summary={s ?? null} history={history} selectedMonths={c.dates.months} maxPrice={c.flight.maxPrice} />
+      {c.mode !== "hotel" && (
+        <PriceInsights summary={s ?? null} history={history} selectedMonths={c.dates.months} maxPrice={c.flight.maxPrice} />
+      )}
 
       {dismissed.length > 0 && (
         <details className="group">

@@ -58,10 +58,15 @@ const httpUrl = (u?: string) => (u && /^https?:\/\//.test(u) ? u : undefined);
 const hex = (c?: string) => (c && /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : undefined);
 type MotisItinerary = { duration: number; transfers: number; legs: MotisLeg[] };
 
-async function transitous(from: Pt, to: Pt, date: string, hourUtc: number | string): Promise<MotisItinerary[]> {
+// Todo menos aviones (los horarios oficiales también incluyen vuelos).
+const ALL_MODES = "TRAM,SUBWAY,FERRY,BUS,COACH,RAIL,FUNICULAR,AERIAL_LIFT,CABLE_CAR";
+// Solo autobuses (para comparar: el tren suele ganar en rapidez y esconde los autobuses directos).
+const BUS_MODES = "TRAM,SUBWAY,BUS,COACH";
+
+async function transitous(from: Pt, to: Pt, date: string, hourUtc: number | string, modes = ALL_MODES): Promise<MotisItinerary[]> {
   const hhmm = typeof hourUtc === "number" ? `${String(hourUtc).padStart(2, "0")}:00` : hourUtc;
   const time = `${proxyDate(date)}T${hhmm}:00Z`;
-  const key = `transit:v2:${from.lat.toFixed(3)},${from.lon.toFixed(3)}>${to.lat.toFixed(3)},${to.lon.toFixed(3)}:${new Date(time).getUTCDay()}:${hhmm}`;
+  const key = `transit:v2:${from.lat.toFixed(3)},${from.lon.toFixed(3)}>${to.lat.toFixed(3)},${to.lon.toFixed(3)}:${new Date(time).getUTCDay()}:${hhmm}${modes === ALL_MODES ? "" : ":bus"}`;
   return cached(key, 7 * 86400, async () => {
     try {
       const params = new URLSearchParams({
@@ -70,8 +75,7 @@ async function transitous(from: Pt, to: Pt, date: string, hourUtc: number | stri
         time,
         maxPreTransitTime: "1200",
         maxPostTransitTime: "1200",
-        // Todo menos aviones (los horarios oficiales también incluyen vuelos).
-        transitModes: "TRAM,SUBWAY,FERRY,BUS,COACH,RAIL,FUNICULAR,AERIAL_LIFT,CABLE_CAR",
+        transitModes: modes,
       });
       const res = await fetch(`https://api.transitous.org/api/v5/plan?${params}`, { headers: UA });
       if (!res.ok) return [];
@@ -277,7 +281,7 @@ async function flixOption(
     mode: "COACH",
     from: trip.fromStation,
     to: trip.toStation,
-    line: trip.transfers ? `${trip.transfers} transbordo(s)` : undefined,
+    // Los transbordos del autocar no se cuentan aquí: el texto lo pone la interfaz en cada idioma.
     agency: "FlixBus",
     minutes: trip.minutes,
     km: Math.round(haversineKm(a.lat, a.lon, b.lat, b.lon)),
@@ -331,11 +335,18 @@ export async function groundOptions(
     airportIata?: string;
     includeTaxi?: boolean;
     noFlix?: boolean;
+    // Buscar también solo en autobús (para comparar con el tren).
+    alsoBus?: boolean;
   },
 ): Promise<GroundOption[]> {
   const hour = opts.hourUtc ?? 9;
   const out: GroundOption[] = [];
   let direct = await transitous(from, to, opts.date, hour);
+  if (opts.alsoBus) {
+    const bus = await transitous(from, to, opts.date, hour, BUS_MODES);
+    const seen = new Set(direct.map((it) => it.duration));
+    direct = [...direct, ...bus.filter((it) => !seen.has(it.duration))];
+  }
   // Desde un aeropuerto sin paradas cerca del punto de referencia: se sale desde sus paradas reales.
   if (!direct.length && opts.airportIata) {
     for (const s of await airportStops(from.lat, from.lon)) {
@@ -346,7 +357,14 @@ export async function groundOptions(
   // Fuera rutas desproporcionadas (vueltas enormes): como mucho 3 h o 4 veces lo que se tarda en coche.
   const roadKm = haversineKm(from.lat, from.lon, to.lat, to.lon) * 1.3;
   const maxSec = Math.max(3 * 3600, (roadKm / 50) * 3600 * 4);
-  const best = direct.filter((it) => it.duration <= maxSec).sort((a, b) => a.duration - b.duration).slice(0, 2);
+  const fit = direct.filter((it) => it.duration <= maxSec).sort((a, b) => a.duration - b.duration);
+  // Los dos más rápidos y, si se pidieron autobuses, también el autobús más rápido.
+  const best = fit.slice(0, 2);
+  if (opts.alsoBus) {
+    const isBus = (it: MotisItinerary) => it.legs.every((l) => !["RAIL", "SUBURBAN", "REGIONAL_RAIL", "REGIONAL_FAST_RAIL", "LONG_DISTANCE", "HIGHSPEED_RAIL", "NIGHT_RAIL"].includes(l.mode));
+    const bus = fit.find((it) => isBus(it) && !best.includes(it));
+    if (bus) best.push(bus);
+  }
   // Con horarios de un día equivalente, el enlace de compra llevaría a otra fecha: se quita.
   const sameDay = proxyDate(opts.date) === opts.date;
   for (const it of best) {

@@ -1,4 +1,4 @@
-import { Bed, Bus, MapPin, PartyPopper, Plane } from "lucide-react";
+import { Bed, Bus, MapPin, PartyPopper, Plane, Scale } from "lucide-react";
 import Link from "next/link";
 import type { Translator } from "@/i18n/core";
 import type { NsMessages } from "@/i18n/messages";
@@ -63,9 +63,16 @@ export async function AlertCard({ a, ms, index = 0 }: { a: Alert; ms: Match[]; i
       </div>
 
       <div className="flex items-center gap-2 text-sm">
-        <span className="font-mono font-semibold">{c.origins.join(" · ")}</span>
+        {/* Solo alojamiento: sin origen. Comparar: la ciudad de salida (avión, tren o bus). */}
+        {c.mode === "hotel" ? (
+          <Bed className="h-4 w-4 shrink-0 text-cyan" />
+        ) : (
+          <span className={c.mode === "compare" ? "max-w-[40%] truncate font-semibold" : "font-mono font-semibold"}>
+            {c.mode === "compare" ? (c.originPlace?.label.split(",")[0] ?? "") : c.origins.join(" · ")}
+          </span>
+        )}
         <span className="h-px flex-1 bg-gradient-to-r from-cyan/50 to-magenta/50" />
-        <Plane className="h-4 w-4 text-cyan rtl:-scale-x-100" />
+        {c.mode === "compare" ? <Scale className="h-4 w-4 text-cyan" /> : c.mode === "hotel" ? null : <Plane className="h-4 w-4 text-cyan rtl:-scale-x-100" />}
         <span className="h-px flex-1 bg-gradient-to-r from-cyan/50 to-magenta/50" />
         <span className="flex min-w-0 items-center gap-1 font-semibold">
           <MapPin className="h-3.5 w-3.5 shrink-0 text-magenta" />
@@ -76,7 +83,11 @@ export async function AlertCard({ a, ms, index = 0 }: { a: Alert; ms: Match[]; i
       <div className="mt-auto flex flex-wrap items-center gap-1.5 text-xs text-muted">
         {pending > 0 && <span className="badge bg-gradient-brand text-white">{t("pendingCount", { n: pending })}</span>}
         {saved > 0 && <span className="badge bg-accent-soft text-accent">{t("savedCount", { n: saved })}</span>}
-        <span className="badge bg-surface-2">≤ {f.eur(c.flight.maxPrice)}</span>
+        {c.mode === "hotel" ? (
+          c.hotel?.maxPricePerNight ? <span className="badge bg-surface-2">≤ {f.eur(c.hotel.maxPricePerNight)}/{t("night")}</span> : null
+        ) : (
+          <span className="badge bg-surface-2">≤ {f.eur(c.flight.maxPrice)}</span>
+        )}
         <span className="badge bg-surface-2 capitalize">{f.datesLabel(c.dates)}</span>
         {c.hotel && (
           <span className="badge bg-surface-2">

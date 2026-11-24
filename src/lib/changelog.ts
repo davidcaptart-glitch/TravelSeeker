@@ -14,6 +14,7 @@ import {
   Moon,
   Palette,
   Plane,
+  Scale,
   Radar,
   RefreshCw,
   Shuffle,
@@ -44,6 +45,7 @@ export type Release = {
 type ReleaseDef = { id: string; date: string; icons: LucideIcon[] };
 
 const RELEASES: ReleaseDef[] = [
+  { id: "2026-11-24-modos", date: "2026-11-24", icons: [BedDouble, Scale] },
   { id: "2026-11-24-mundo", date: "2026-11-24", icons: [Languages, Globe2, Plane, Sunrise, BedDouble, CalendarPlus, History, Coins] },
   { id: "2026-11-24-transporte", date: "2026-11-24", icons: [ThumbsUp, TrainFront, Ticket, CarTaxiFront] },
   { id: "2026-11-24-dias-y-horas", date: "2026-11-24", icons: [CalendarRange, Clock, Clock] },

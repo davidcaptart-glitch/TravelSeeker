@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Bed, Building2, CalendarRange, Check, ChevronDown, Compass, History, Home, Hotel, Loader2, MapPin, Minus, Plane, Plus, Sunrise, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bed, Building2, CalendarRange, Check, ChevronDown, Compass, History, Home, Hotel, Loader2, MapPin, Minus, Plane, Plus, Scale, Sunrise, Trash2, X } from "lucide-react";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { saveAlert, type FormState } from "@/app/actions";
 import { addDays, DAY_TRIP_DEFAULT_PLAN, DAY_TRIP_TIMES, generateWindows, monthsOfRanges } from "@/lib/dates";
@@ -35,6 +35,8 @@ function fromConfig(today: string, c?: AlertConfig): Draft {
   return {
     name: c?.name ?? "",
     notifyMode: c?.notifyMode ?? "flight",
+    mode: c?.mode ?? "flight",
+    originPlace: c?.originPlace,
     origins: c?.origins ?? [],
     destKind: c?.destination.kind ?? "place",
     place: c?.destination.kind === "place" ? c.destination.place : undefined,
@@ -69,6 +71,10 @@ function fromConfig(today: string, c?: AlertConfig): Draft {
 }
 
 function suggestedName(d: Draft, t: T, f: Format): string {
+  if (d.mode === "hotel") return d.place ? t("nameStay", { place: d.place.label.split(",")[0] }) : "";
+  if (d.mode === "compare") {
+    return d.place && d.originPlace ? t("nameCompare", { from: d.originPlace.label.split(",")[0], to: d.place.label.split(",")[0] }) : "";
+  }
   if (d.destKind === "place") {
     if (!d.place) return "";
     const place = d.place.label.split(",")[0];
@@ -99,12 +105,17 @@ function dayTripWindows(p: NonNullable<AlertConfig["dates"]["dayTripTimes"]>) {
 }
 
 function toConfig(d: Draft, dates: AlertConfig["dates"], t: T, f: Format): AlertConfig {
+  const mode = d.mode ?? "flight";
+  // Solo alojamiento y comparar van siempre a un sitio concreto.
+  const toPlace = mode !== "flight" || d.destKind === "place";
   return {
     name: (d.name.trim() || suggestedName(d, t, f)).slice(0, 80),
-    notifyMode: dates.dayTrip ? "flight" : d.notifyMode,
-    origins: d.origins,
+    mode,
+    originPlace: mode === "compare" ? d.originPlace : undefined,
+    notifyMode: dates.dayTrip || mode !== "flight" ? "flight" : d.notifyMode,
+    origins: mode === "hotel" ? [] : d.origins,
     destination:
-      d.destKind === "place"
+      toPlace
         ? { kind: "place", place: d.place! }
         : {
             kind: "anywhere",
@@ -113,14 +124,14 @@ function toConfig(d: Draft, dates: AlertConfig["dates"], t: T, f: Format): Alert
             regions: d.regions,
             excludeCountries: d.excludeCountries.filter((c) => !d.countries.includes(c)),
           },
-    destinationAirports: d.destKind === "place" ? d.destinationAirports : [],
+    destinationAirports: toPlace && mode !== "hotel" ? d.destinationAirports : [],
     airportRadiusKm: d.airportRadiusKm,
     allowGround: d.allowGround,
     maxGroundMinutes: d.maxGroundMinutes,
     groundFrom: d.allowGround ? d.groundFrom : undefined,
     dates,
     flight: d.flight,
-    hotel: d.hotelOn && !dates.dayTrip
+    hotel: (d.hotelOn || mode === "hotel") && !dates.dayTrip
       ? {
           ...d.hotel,
           tripadvisorGeo: d.destKind === "place" ? d.hotel.tripadvisorGeo : undefined,
@@ -842,14 +853,19 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
   }, [years]);
   const windows = useMemo(() => generateWindows(dates, new Set(dates.useHolidays ? holidays : []), today), [dates, holidays, today]);
 
+  const mode = d.mode ?? "flight";
   const stepOk = [
-    d.origins.length > 0 && (d.destKind === "anywhere" || Boolean(d.place)),
+    mode === "hotel"
+      ? Boolean(d.place)
+      : mode === "compare"
+        ? Boolean(d.originPlace && d.place)
+        : d.origins.length > 0 && (d.destKind === "anywhere" || Boolean(d.place)),
     dates.months.length > 0 && windows.length > 0,
-    d.flight.maxPrice > 0 && (!d.hotelOn || d.dates.dayTrip || d.hotel.types.length > 0),
+    mode === "hotel" ? d.hotel.types.length > 0 : d.flight.maxPrice > 0 && (!d.hotelOn || d.dates.dayTrip || d.hotel.types.length > 0),
     true,
   ];
   const missing = [
-    !d.origins.length ? t("missingOrigin") : t("missingDest"),
+    mode === "flight" && !d.origins.length ? t("missingOrigin") : mode === "compare" && !d.originPlace ? t("missingOriginPlace") : t("missingDest"),
     !dates.months.length
       ? dateMode === "ranges"
         ? t("missingRanges")
@@ -909,11 +925,53 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
       <div key={step} className="animate-rise space-y-4">
         {step === 0 && (
           <>
-            <Block title={t("fromTitle")} hint={t("fromHint")}>
-              <AirportMultiPicker value={d.origins} onChange={(v) => set("origins", v)} />
+            <Block title={t("modeTitle")}>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(
+                  [
+                    ["flight", Plane, t("modeFlight"), t("modeFlightHint")],
+                    ["hotel", Bed, t("modeHotel"), t("modeHotelHint")],
+                    ["compare", Scale, t("modeCompare"), t("modeCompareHint")],
+                  ] as const
+                ).map(([v, Icon, title, h]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    aria-pressed={mode === v}
+                    onClick={() =>
+                      setD((p) => ({
+                        ...p,
+                        mode: v,
+                        destKind: v === "flight" ? p.destKind : "place",
+                        hotelOn: v === "hotel" ? true : p.hotelOn,
+                        dates: v === "hotel" ? { ...p.dates, dayTrip: false, dayTripTimes: undefined } : p.dates,
+                      }))
+                    }
+                    className={`flex gap-3 rounded-2xl border p-3 text-start transition sm:block ${mode === v ? "border-accent bg-accent-soft" : "border-border hover:bg-surface-2"}`}
+                  >
+                    <Icon className={`h-5 w-5 shrink-0 sm:mb-2 ${mode === v ? "text-accent" : "text-muted"}`} />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold">{title}</span>
+                      <span className="hint">{h}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
             </Block>
 
+            {mode === "flight" && (
+              <Block title={t("fromTitle")} hint={t("fromHint")}>
+                <AirportMultiPicker value={d.origins} onChange={(v) => set("origins", v)} />
+              </Block>
+            )}
+            {mode === "compare" && (
+              <Block title={t("fromPlaceTitle")} hint={t("fromPlaceHint")}>
+                <PlacePicker value={d.originPlace} onChange={(p) => setD((x) => ({ ...x, originPlace: p, origins: [] }))} placeholder={t("fromPlaceExamples")} />
+              </Block>
+            )}
+
             <Block title={t("destTitle")}>
+              {mode === "flight" && (
               <div className="grid grid-cols-2 gap-2">
                 {(
                   [
@@ -934,6 +992,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                   </button>
                 ))}
               </div>
+              )}
 
               {d.destKind === "place" ? (
                 <div className="space-y-4">
@@ -942,7 +1001,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                     onChange={(p) => setD((x) => ({ ...x, place: p, destinationAirports: [] }))}
                     placeholder={t("placeExamples")}
                   />
-                  {d.place && (
+                  {d.place && mode !== "hotel" && (
                     <>
                       <div>
                         <div className="flex items-baseline justify-between gap-2">
@@ -1090,6 +1149,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
 
         {step === 1 && (
           <>
+            {mode !== "hotel" && (
             <button
               type="button"
               aria-pressed={Boolean(d.dates.dayTrip)}
@@ -1105,6 +1165,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                 {d.dates.dayTrip && <Check className="h-3.5 w-3.5" />}
               </span>
             </button>
+            )}
 
             {d.dates.dayTrip && (
               <Block title={t("dtTitle")}>
@@ -1288,7 +1349,19 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
 
         {step === 2 && (
           <>
-            <Block title={t("flightTitle")}>
+            {mode === "hotel" ? (
+              <Block title={t("guestsTitle")}>
+                <Stepper
+                  label={t("travellers")}
+                  min={1}
+                  max={9}
+                  value={d.flight.passengers}
+                  onChange={(v) => setFlight({ passengers: v })}
+                  unit={(n) => t("personUnit", { n })}
+                />
+              </Block>
+            ) : (
+            <Block title={mode === "compare" ? t("compareBudgetTitle") : t("flightTitle")}>
               <Money
                 id="maxPrice"
                 label={t("maxPrice")}
@@ -1297,7 +1370,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                 min={10}
                 max={2000}
               />
-              <RouteHistoryHint d={d} dates={dates} />
+              {mode === "flight" ? <RouteHistoryHint d={d} dates={dates} /> : <p className="hint">{t("compareBudgetHint")}</p>}
               <div>
                 <p className="label">{t("stopsLabel")}</p>
                 <Segmented
@@ -1350,6 +1423,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                 </div>
               </div>
             </Block>
+            )}
 
             {d.dates.dayTrip ? (
               <Block title={t("stayTitle")}>
@@ -1357,6 +1431,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
               </Block>
             ) : (
             <Block title={t("stayTitle")}>
+              {mode !== "hotel" && (
               <Switch
                 checked={d.hotelOn}
                 onChange={(v) => {
@@ -1366,7 +1441,8 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                 label={t("searchStay")}
                 hint={t("searchStayHint")}
               />
-              {d.hotelOn && (
+              )}
+              {(d.hotelOn || mode === "hotel") && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-3 gap-2">
                     {HOTEL_TYPES.map((ht) => {
@@ -1492,6 +1568,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
         {step === 3 && (
           <>
             <Block title={t("notifyTitle")}>
+              {mode === "flight" && (
               <div className="grid gap-2 sm:grid-cols-2">
                 {(
                   [
@@ -1524,6 +1601,7 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                   );
                 })}
               </div>
+              )}
               <div>
                 <p className="label">{t("checkEvery")}</p>
                 <Segmented
@@ -1556,7 +1634,11 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                     [
                       0,
                       t("step0"),
-                      `${d.origins.join(", ")} → ${d.destKind === "place" ? (d.place?.label.split(",")[0] ?? "—") : t("anywhere")}${d.allowGround ? ` · ${t("plusGround")}` : ""}`,
+                      mode === "hotel"
+                        ? `${t("modeHotel")} · ${d.place?.label.split(",")[0] ?? "—"}`
+                        : mode === "compare"
+                          ? `${d.originPlace?.label.split(",")[0] ?? "—"} → ${d.place?.label.split(",")[0] ?? "—"} · ${t("modeCompare")}`
+                          : `${d.origins.join(", ")} → ${d.destKind === "place" ? (d.place?.label.split(",")[0] ?? "—") : t("anywhere")}${d.allowGround ? ` · ${t("plusGround")}` : ""}`,
                     ],
                     [
                       1,
@@ -1589,7 +1671,9 @@ export function AlertForm({ id, initial, today }: { id?: string; initial?: Alert
                         : t("no"),
                     ],
                   ] as const
-                ).map(([s, k, v]) => (
+                )
+                  .filter(([, k]) => !(mode === "hotel" && k === t("flightTitle")))
+                  .map(([s, k, v]) => (
                   <div key={k} className="flex items-start gap-3 py-2.5">
                     <dt className="w-24 shrink-0 text-muted">{k}</dt>
                     <dd className="min-w-0 flex-1">{v}</dd>

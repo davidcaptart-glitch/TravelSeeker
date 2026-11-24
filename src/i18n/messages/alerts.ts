@@ -3,6 +3,7 @@ import { defineMessages } from "../core";
 // Lista de alertas y alta/edición (alerts/page, new, edit, AlertCard, AlertActions).
 export default defineMessages({
   es: {
+    night: "noche",
     title: "Tus alertas",
     subtitle: "Lo que estamos vigilando por ti, sin parar.",
     newShort: "Nueva",
@@ -38,6 +39,7 @@ export default defineMessages({
     confirmDelete: "¿Borrar esta alerta y sus resultados?",
   },
   en: {
+    night: "night",
     title: "Your alerts",
     subtitle: "What we're watching for you, around the clock.",
     newShort: "New",
@@ -73,6 +75,7 @@ export default defineMessages({
     confirmDelete: "Delete this alert and its results?",
   },
   pt: {
+    night: "noite",
     title: "Seus alertas",
     subtitle: "O que estamos vigiando por você, sem parar.",
     newShort: "Novo",
@@ -108,6 +111,7 @@ export default defineMessages({
     confirmDelete: "Excluir este alerta e seus resultados?",
   },
   fr: {
+    night: "nuit",
     title: "Vos alertes",
     subtitle: "Ce que nous surveillons pour vous, sans relâche.",
     newShort: "Nouvelle",
@@ -143,6 +147,7 @@ export default defineMessages({
     confirmDelete: "Supprimer cette alerte et ses résultats ?",
   },
   it: {
+    night: "notte",
     title: "I tuoi avvisi",
     subtitle: "Quello che teniamo d'occhio per te, senza sosta.",
     newShort: "Nuovo",
@@ -178,6 +183,7 @@ export default defineMessages({
     confirmDelete: "Eliminare questo avviso e i suoi risultati?",
   },
   de: {
+    night: "Nacht",
     title: "Deine Alarme",
     subtitle: "Was wir rund um die Uhr für dich im Blick behalten.",
     newShort: "Neu",
@@ -213,6 +219,7 @@ export default defineMessages({
     confirmDelete: "Diesen Alarm und seine Ergebnisse löschen?",
   },
   zh: {
+    night: "晚",
     title: "我的提醒",
     subtitle: "我们正在为你不间断地盯着这些。",
     newShort: "新建",
@@ -248,6 +255,7 @@ export default defineMessages({
     confirmDelete: "删除此提醒及其结果？",
   },
   ja: {
+    night: "泊",
     title: "アラート",
     subtitle: "あなたの代わりに休まずチェックしています。",
     newShort: "新規",
@@ -283,6 +291,7 @@ export default defineMessages({
     confirmDelete: "このアラートと結果を削除しますか？",
   },
   ko: {
+    night: "박",
     title: "내 알림",
     subtitle: "쉬지 않고 대신 지켜보고 있어요.",
     newShort: "새로 만들기",
@@ -318,6 +327,7 @@ export default defineMessages({
     confirmDelete: "이 알림과 결과를 삭제할까요?",
   },
   ar: {
+    night: "ليلة",
     title: "تنبيهاتك",
     subtitle: "ما نراقبه من أجلك دون توقف.",
     newShort: "جديد",
@@ -353,6 +363,7 @@ export default defineMessages({
     confirmDelete: "هل تريد حذف هذا التنبيه ونتائجه؟",
   },
   ru: {
+    night: "ночь",
     title: "Ваши оповещения",
     subtitle: "Мы следим за ценами для вас без перерыва.",
     newShort: "Новое",
@@ -388,6 +399,7 @@ export default defineMessages({
     confirmDelete: "Удалить это оповещение и его результаты?",
   },
   hi: {
+    night: "रात",
     title: "आपके अलर्ट",
     subtitle: "जिन पर हम आपके लिए लगातार नज़र रख रहे हैं।",
     newShort: "नया",
@@ -423,6 +435,7 @@ export default defineMessages({
     confirmDelete: "यह अलर्ट और इसके नतीजे हटाएँ?",
   },
   id: {
+    night: "malam",
     title: "Peringatan kamu",
     subtitle: "Yang kami pantau untukmu, tanpa henti.",
     newShort: "Baru",
